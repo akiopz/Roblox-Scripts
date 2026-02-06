@@ -21,6 +21,17 @@ local success, err = pcall(function()
     local task_wait = task.wait
     local math_random = math.random
 
+    -- === 遊戲驗證：僅限 Bedwars ===
+    -- Bedwars GameId: 2619619496
+    if game.GameId ~= 2619619496 then
+        local msg = Instance.new("Message")
+        msg.Parent = CoreGui
+        msg.Text = "\n\nCatV3 Error: 此腳本僅支持 Bedwars！\n(This script only supports Bedwars)\n\n正在退出..."
+        task_wait(5)
+        msg:Destroy()
+        return
+    end
+
     -- === 連接管理系統 (防止內存洩漏) ===
     local Connections = {}
     local function SafeConnect(signal, callback)
