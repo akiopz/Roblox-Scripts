@@ -15,29 +15,36 @@ end
 
 local success, err = pcall(function()
     -- === 基礎配置 ===
-    local BASE_URL = "https://raw.githubusercontent.com/akiopz/Roblox-Scripts/main/"
+    local HOSTS = {
+        "https://raw.githubusercontent.com/akiopz/Roblox-Scripts/main/",
+        "https://raw.fastgit.org/akiopz/Roblox-Scripts/main/"
+    }
     
     local function GetScript(path)
         print("正在獲取模組: " .. path)
-        local success, content = pcall(function()
-            return game:HttpGet(BASE_URL .. path)
-        end)
-        
-        if not success or not content or content == "" then
-            error("無法獲取檔案: " .. path .. " (請檢查網路或 URL)")
+        local lastErr
+        for _, base in ipairs(HOSTS) do
+            local url = base .. path .. "?cb=" .. tostring(os.time())
+            local ok, content = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if ok and content and content ~= "" then
+                local func, parseErr = loadstring(content)
+                if func then
+                    local execSuccess, result = pcall(func)
+                    if execSuccess then
+                        return result
+                    else
+                        lastErr = "執行錯誤 (" .. path .. "): " .. tostring(result)
+                    end
+                else
+                    lastErr = "語法錯誤 (" .. path .. "): " .. tostring(parseErr)
+                end
+            else
+                lastErr = "無法獲取檔案: " .. path .. " 來源: " .. base
+            end
         end
-        
-        local func, parseErr = loadstring(content)
-        if not func then
-            error("語法錯誤 (" .. path .. "): " .. tostring(parseErr))
-        end
-        
-        local execSuccess, result = pcall(func)
-        if not execSuccess then
-            error("執行錯誤 (" .. path .. "): " .. tostring(result))
-        end
-        
-        return result
+        error(lastErr or ("下載未知錯誤: " .. path))
     end
 
     Notify("Halol V4.0", "正在初始化核心模組...", 3)
@@ -48,6 +55,7 @@ local success, err = pcall(function()
     local guiModule = GetScript("src/core/gui.lua")
     local mainGui = guiModule.CreateMainGui()
     
+    print("DEBUG: 核心模組已加載")
     local utilsModule = GetScript("src/core/utils.lua")
     local GuiUtils = utilsModule.Init(mainGui)
 
@@ -60,6 +68,7 @@ local success, err = pcall(function()
     local aiModule = GetScript("src/modules/ai.lua")
     local AI = aiModule.Init(CatFunctions)
     
+    print("DEBUG: 功能模組已加載")
     local visualsModule = GetScript("src/modules/visuals.lua")
     local Visuals = visualsModule.Init(mainGui, Notify)
     
@@ -74,12 +83,6 @@ local success, err = pcall(function()
     
     -- 默認選中第一個分頁
     if firstTab then firstTab.Switch() end
-
-    -- 4. 註冊功能按鈕
-    -- 自動核心
-    GuiUtils.AddScript("自動核心", "自動模式 (God Mode)", "全功能自動模式：結合飛行、殺戮光環與自動追蹤。", function()
-        AI.ToggleGodMode(true)
-    end)
     
     GuiUtils.AddScript("自動核心", "自動掛機 (Auto Play)", "全自動作戰與資源收集。", function()
         AI.ToggleAutoPlay(true)
