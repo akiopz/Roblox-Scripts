@@ -201,9 +201,37 @@ local success, err = pcall(function()
         Position = UDim2.new(0.5, -275, 0.5, -200),
         Size = UDim2.new(0, 550, 0, 400),
         Active = true,
-        Draggable = true,
         Parent = ScreenGui
     })
+
+    -- 自定義拖拽邏輯 (取代已棄用的 Draggable)
+    local dragging, dragInput, dragStart, startPos
+    SafeConnect(MainFrame.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    SafeConnect(MainFrame.InputChanged, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    SafeConnect(UserInputService.InputChanged, function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2_new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.X.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
 
     UICorner_Main.CornerRadius = UDim.new(0, 12)
     UICorner_Main.Parent = MainFrame
@@ -285,6 +313,29 @@ local success, err = pcall(function()
         TextColor3 = Color3.fromRGB(255, 255, 255),
         TextSize = 22
     })
+
+    -- 狀態顯示 (大廳/遊戲中)
+    local StatusLabel = Instance.new("TextLabel")
+    ApplyProperties(StatusLabel, {
+        Name = "StatusLabel",
+        Parent = LeftPanel,
+        BackgroundTransparency = 1,
+        Position = UDim2_new(0, 0, 1, -30),
+        Size = UDim2_new(1, 0, 0, 20),
+        Font = Enum.Font.GothamMedium,
+        Text = "偵測中...",
+        TextColor3 = Color3_fromRGB(180, 180, 180),
+        TextSize = 12
+    })
+
+    task_spawn(function()
+        while ScreenGui and ScreenGui.Parent do
+            local isLobby = game.PlaceId == 6872265039 or not workspace:FindFirstChild("Map")
+            StatusLabel.Text = isLobby and "📍 當前位置: 大廳" or "🎮 當前位置: 遊戲中"
+            StatusLabel.TextColor3 = isLobby and Color3_fromRGB(100, 200, 100) or Color3_fromRGB(255, 150, 50)
+            task_wait(3)
+        end
+    end)
 
     -- 分頁按鈕容器
     ApplyProperties(TabContainer, {
