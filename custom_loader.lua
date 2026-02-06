@@ -115,10 +115,11 @@ local success, err = pcall(function()
         local args = {...}
         
         if not env.checkcaller() then
-            -- 攔截敏感遠端事件
-            if method == "FireServer" or method == "InvokeServer" then
+            -- 攔截敏感遠端事件 (增加 nil 檢查)
+            if (method == "FireServer" or method == "InvokeServer") and t then
+                local remoteName = tostring(t)
                 for i = 1, #BlockedRemotes do
-                    if tostring(t) == BlockedRemotes[i] then
+                    if remoteName == BlockedRemotes[i] then
                         return nil
                     end
                 end
@@ -131,20 +132,24 @@ local success, err = pcall(function()
                 end
             end
             
-            -- 隱藏 GetChildren/GetDescendants 中的 GUI
+            -- 隱藏 GetChildren/GetDescendants 中的 GUI (使用 pcall 保護)
             if method == "GetChildren" or method == "GetDescendants" or method == "GetItems" then
-                local results = old_namecall(t, ...)
-                if type(results) == "table" then
-                    for i, v in ipairs(results) do
-                        if v.Name == GUIName or v.Name == ESPTag then
+                local success, results = pcall(function() return old_namecall(t, ...) end)
+                if success and type(results) == "table" then
+                    for i = #results, 1, -1 do -- 倒序遍歷以安全移除
+                        local v = results[i]
+                        if v and (v.Name == GUIName or v.Name == ESPTag) then
                             table.remove(results, i)
                         end
                     end
+                    return results
                 end
-                return results
             end
         end
-        return old_namecall(t, ...)
+        
+        local success, result = pcall(function() return old_namecall(t, ...) end)
+        if success then return result end
+        return nil
     end)
     env.setreadonly(mt, true)
 
@@ -152,26 +157,39 @@ local success, err = pcall(function()
     local LoadCache = {}
     local function SecureLoad(url)
         if LoadCache[url] then return LoadCache[url] end
+        
         local success, result = pcall(function()
             return game:HttpGet(url, true)
         end)
-        if success then
+        
+        if success and result and #result > 0 then
             local func, err = env.loadstring(result)
             if func then
                 LoadCache[url] = func
                 return func
             else
-                error("Loadstring Error: " .. tostring(err))
+                Notify("載入錯誤", "代碼解析失敗: " .. tostring(err), "Error")
+                warn("Loadstring Error: " .. tostring(err))
             end
         else
-            error("HttpGet Error: " .. tostring(result))
+            Notify("網路錯誤", "無法從來源獲取代碼，請檢查網路連接", "Error")
+            warn("HttpGet Error: " .. tostring(result))
         end
+        
+        -- 返回一個空函數，防止腳本崩潰
+        return function() end
     end
 
-    -- 批量屬性設置工具
+    -- 批量屬性設置工具 (具備安全檢查)
     local function ApplyProperties(instance, props)
+        if not instance then return end
         for k, v in pairs(props) do
-            instance[k] = v
+            local success, err = pcall(function()
+                instance[k] = v
+            end)
+            if not success then
+                warn("ApplyProperties Error [" .. tostring(instance) .. "]: 無法設置屬性 " .. tostring(k) .. " - " .. tostring(err))
+            end
         end
     end
 
@@ -329,37 +347,45 @@ local success, err = pcall(function()
     })
 
     task_spawn(function()
-        while ScreenGui and ScreenGui.Parent do
-            local isLobby = game.PlaceId == 6872265039 or not workspace:FindFirstChild("Map")
-            local mapName = "未知地圖"
-            
-            if isLobby then
-                StatusLabel.Text = "📍 當前位置: 大廳"
-                StatusLabel.TextColor3 = Color3_fromRGB(100, 200, 100)
-            else
-                -- 嘗試從多個路徑獲取地圖名稱
-                local mapFolder = workspace:FindFirstChild("Map")
-                if mapFolder then
-                    -- Bedwars 通常會在地圖資料夾的屬性或子節點中存放地圖名
-                    mapName = mapFolder:GetAttribute("MapName") or mapFolder:GetAttribute("Name")
-                    
-                    if not mapName then
-                        for _, v in ipairs(mapFolder:GetChildren()) do
-                            if v:IsA("StringValue") and (v.Name == "MapName" or v.Name == "Name") then
-                                mapName = v.Value
-                                break
+        while _G.CatLoaderRunning and ScreenGui and ScreenGui.Parent do
+            local status_success, status_err = pcall(function()
+                local isLobby = game.PlaceId == 6872265039 or not workspace:FindFirstChild("Map")
+                local mapName = "未知地圖"
+                
+                if isLobby then
+                    StatusLabel.Text = "📍 當前位置: 大廳"
+                    StatusLabel.TextColor3 = Color3_fromRGB(100, 200, 100)
+                else
+                    -- 嘗試從多個路徑獲取地圖名稱
+                    local mapFolder = workspace:FindFirstChild("Map")
+                    if mapFolder then
+                        -- Bedwars 通常會在地圖資料夾的屬性或子節點中存放地圖名
+                        mapName = mapFolder:GetAttribute("MapName") or mapFolder:GetAttribute("Name")
+                        
+                        if not mapName then
+                            for _, v in ipairs(mapFolder:GetChildren()) do
+                                if v:IsA("StringValue") and (v.Name == "MapName" or v.Name == "Name") then
+                                    mapName = v.Value
+                                    break
+                                end
                             end
+                        end
+                        
+                        -- 如果還是找不到，則取資料夾內第一個具有代表性的名稱
+                        if not mapName then
+                            mapName = mapFolder.Name
                         end
                     end
                     
-                    -- 如果還是找不到，則取資料夾內第一個具有代表性的名稱
-                    if not mapName then
-                        mapName = mapFolder.Name
-                    end
+                    StatusLabel.Text = string.format("🎮 地圖: %s", mapName or "載入中...")
+                    StatusLabel.TextColor3 = Color3_fromRGB(255, 150, 50)
                 end
-                
-                StatusLabel.Text = string.format("🎮 地圖: %s", mapName or "載入中...")
-                StatusLabel.TextColor3 = Color3_fromRGB(255, 150, 50)
+            end)
+            
+            if not status_success then
+                warn("Status Detection Error: " .. tostring(status_err))
+                StatusLabel.Text = "⚠️ 偵測出錯"
+                StatusLabel.TextColor3 = Color3_fromRGB(255, 80, 80)
             end
             task_wait(3)
         end
@@ -401,14 +427,35 @@ local success, err = pcall(function()
     end
 
     local function Cleanup()
-        for _, conn in pairs(Connections) do
-            if conn.Connected then
-                conn:Disconnect()
+        local success, err = pcall(function()
+            _G.CatLoaderRunning = false
+            
+            -- 中斷所有功能迴圈
+            _G.AI_Enabled = false
+            _G.KillAura = false
+            _G.FlyEnabled = false
+            _G.ESPEnabled = false
+            _G.AutoFarm = false
+            
+            -- 清理連線
+            for _, conn in pairs(Connections) do
+                if conn and conn.Connected then
+                    conn:Disconnect()
+                end
             end
+            Connections = {}
+            
+            -- 銷毀 GUI
+            if ScreenGui then 
+                ScreenGui:Destroy() 
+            end
+            
+            Notify("清理完成", "腳本已安全停止並清理資源", "Success")
+        end)
+        
+        if not success then
+            warn("Cleanup Error: " .. tostring(err))
         end
-        Connections = {}
-        _G.CatLoaderRunning = false
-        if ScreenGui then ScreenGui:Destroy() end
     end
 
     -- 建立分頁函數 (優化初始化)
@@ -981,29 +1028,35 @@ local success, err = pcall(function()
         
         task.spawn(function()
             while _G.KillAura and task_wait(0.1) do
-                local char = lp.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    for _, player in ipairs(Players:GetPlayers()) do
-                        if player ~= lp and player.Team ~= lp.Team and player.Character then
-                            local ehum = player.Character:FindFirstChildOfClass("Humanoid")
-                            local ehrp = player.Character:FindFirstChild("HumanoidRootPart")
-                            if ehum and ehum.Health > 0 and ehrp then
-                                local dist = (hrp.Position - ehrp.Position).Magnitude
-                                if dist < 20 then
-                                    local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or 
-                                                   ReplicatedStorage:FindFirstChild("CombatEvents", true)
-                                    
-                                    if remote and remote:IsA("RemoteEvent") then
-                                        remote:FireServer({["entity"] = player.Character})
-                                    else
-                                        local tool = char:FindFirstChildOfClass("Tool")
-                                        if tool then tool:Activate() end
+                local loop_success, loop_err = pcall(function()
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        for _, player in ipairs(Players:GetPlayers()) do
+                            if player ~= lp and player.Team ~= lp.Team and player.Character then
+                                local ehum = player.Character:FindFirstChildOfClass("Humanoid")
+                                local ehrp = player.Character:FindFirstChild("HumanoidRootPart")
+                                if ehum and ehum.Health > 0 and ehrp then
+                                    local dist = (hrp.Position - ehrp.Position).Magnitude
+                                    if dist < 20 then
+                                        local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or 
+                                                       ReplicatedStorage:FindFirstChild("CombatEvents", true)
+                                        
+                                        if remote and remote:IsA("RemoteEvent") then
+                                            remote:FireServer({["entity"] = player.Character})
+                                        else
+                                            local tool = char:FindFirstChildOfClass("Tool")
+                                            if tool then tool:Activate() end
+                                        end
                                     end
                                 end
                             end
                         end
                     end
+                end)
+                if not loop_success then
+                    warn("KillAura Loop Error: " .. tostring(loop_err))
+                    task_wait(1) -- 出錯時稍微等待，防止 CPU 佔用過高
                 end
             end
         end)
@@ -1084,21 +1137,28 @@ local success, err = pcall(function()
             
             task.spawn(function()
                 while _G.FlyEnabled and char and char.Parent do
-                    local currentHrp = char:FindFirstChild("HumanoidRootPart")
-                    if not currentHrp then break end
-                    
-                    local vel = Vector3_new(0, 0, 0)
-                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then vel = vel + workspace.CurrentCamera.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then vel = vel - workspace.CurrentCamera.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then vel = vel - workspace.CurrentCamera.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then vel = vel + workspace.CurrentCamera.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vel = vel + Vector3_new(0, 1, 0) end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then vel = vel - Vector3_new(0, 1, 0) end
-                    
-                    bv.Velocity = vel.Magnitude > 0 and vel.Unit * 50 or Vector3_new(0, 0, 0)
+                    local fly_success, fly_err = pcall(function()
+                        local currentHrp = char:FindFirstChild("HumanoidRootPart")
+                        if not currentHrp then return end
+                        
+                        local vel = Vector3_new(0, 0, 0)
+                        if UserInputService:IsKeyDown(Enum.KeyCode.W) then vel = vel + workspace.CurrentCamera.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.S) then vel = vel - workspace.CurrentCamera.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.A) then vel = vel - workspace.CurrentCamera.CFrame.RightVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.D) then vel = vel + workspace.CurrentCamera.CFrame.RightVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then vel = vel + Vector3_new(0, 1, 0) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then vel = vel - Vector3_new(0, 1, 0) end
+                        
+                        if bv and bv.Parent then
+                            bv.Velocity = vel.Magnitude > 0 and vel.Unit * 50 or Vector3_new(0, 0, 0)
+                        end
+                    end)
+                    if not fly_success then
+                        warn("Fly Loop Error: " .. tostring(fly_err))
+                    end
                     task_wait()
                 end
-                if bv then bv:Destroy() end
+                if bv then pcall(function() bv:Destroy() end) end
             end)
         end
     end)
