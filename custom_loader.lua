@@ -134,7 +134,7 @@ local success, err = pcall(function()
             
             -- 隱藏 GetChildren/GetDescendants 中的 GUI (使用 pcall 保護)
             if method == "GetChildren" or method == "GetDescendants" or method == "GetItems" then
-                local success, results = pcall(function() return old_namecall(t, ...) end)
+                local success, results = pcall(old_namecall, t, ...)
                 if success and type(results) == "table" then
                     for i = #results, 1, -1 do -- 倒序遍歷以安全移除
                         local v = results[i]
@@ -147,7 +147,7 @@ local success, err = pcall(function()
             end
         end
         
-        local success, result = pcall(function() return old_namecall(t, ...) end)
+        local success, result = pcall(old_namecall, t, ...)
         if success then return result end
         return nil
     end)
