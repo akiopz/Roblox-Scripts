@@ -331,8 +331,36 @@ local success, err = pcall(function()
     task_spawn(function()
         while ScreenGui and ScreenGui.Parent do
             local isLobby = game.PlaceId == 6872265039 or not workspace:FindFirstChild("Map")
-            StatusLabel.Text = isLobby and "📍 當前位置: 大廳" or "🎮 當前位置: 遊戲中"
-            StatusLabel.TextColor3 = isLobby and Color3_fromRGB(100, 200, 100) or Color3_fromRGB(255, 150, 50)
+            local mapName = "未知地圖"
+            
+            if isLobby then
+                StatusLabel.Text = "📍 當前位置: 大廳"
+                StatusLabel.TextColor3 = Color3_fromRGB(100, 200, 100)
+            else
+                -- 嘗試從多個路徑獲取地圖名稱
+                local mapFolder = workspace:FindFirstChild("Map")
+                if mapFolder then
+                    -- Bedwars 通常會在地圖資料夾的屬性或子節點中存放地圖名
+                    mapName = mapFolder:GetAttribute("MapName") or mapFolder:GetAttribute("Name")
+                    
+                    if not mapName then
+                        for _, v in ipairs(mapFolder:GetChildren()) do
+                            if v:IsA("StringValue") and (v.Name == "MapName" or v.Name == "Name") then
+                                mapName = v.Value
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- 如果還是找不到，則取資料夾內第一個具有代表性的名稱
+                    if not mapName then
+                        mapName = mapFolder.Name
+                    end
+                end
+                
+                StatusLabel.Text = string.format("🎮 地圖: %s", mapName or "載入中...")
+                StatusLabel.TextColor3 = Color3_fromRGB(255, 150, 50)
+            end
             task_wait(3)
         end
     end)
