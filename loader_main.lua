@@ -1,5 +1,6 @@
 -- Halol (V4.0) 核心加載器 (完整模組化版本)
 ---@diagnostic disable: undefined-global, deprecated, undefined-field
+print("DEBUG: Halol V4.0 Loader Entry")
 print("Halol V4.0 開始加載...")
 
 local function Notify(title, text, duration)
