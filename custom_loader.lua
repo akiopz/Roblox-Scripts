@@ -181,6 +181,8 @@ local success, err = pcall(function()
     local ScreenGui = Instance.new("ScreenGui")
     local MainFrame = Instance.new("Frame")
     local UICorner_Main = Instance.new("UICorner")
+    local UIStroke_Main = Instance.new("UIStroke") -- 新增描邊
+    local RGBLine = Instance.new("Frame") -- 新增 RGB 頂條
     local LeftPanel = Instance.new("Frame")
     local UICorner_Left = Instance.new("UICorner")
     local Title = Instance.new("TextLabel")
@@ -201,11 +203,46 @@ local success, err = pcall(function()
 
     ApplyProperties(MainFrame, {
         Name = "MainFrame",
-        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+        BackgroundColor3 = Color3.fromRGB(15, 15, 15), -- 更深的背景色
         Position = UDim2.new(0.5, -275, 0.5, -200),
         Size = UDim2.new(0, 550, 0, 400),
+        BorderSizePixel = 0,
         Active = true,
         Parent = ScreenGui
+    })
+
+    -- 新增外描邊效果
+    ApplyProperties(UIStroke_Main, {
+        Color = Color3.fromRGB(40, 40, 40),
+        Thickness = 1.5,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = MainFrame
+    })
+
+    -- 新增 RGB 頂條
+    ApplyProperties(RGBLine, {
+        Name = "RGBLine",
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(1, 0, 0, 3),
+        ZIndex = 2,
+        Parent = MainFrame
+    })
+    local RGBLineCorner = Instance.new("UICorner")
+    RGBLineCorner.CornerRadius = UDim.new(0, 12)
+    RGBLineCorner.Parent = RGBLine
+    
+    -- 讓頂條只在上方圓角
+    local RGBLineFix = Instance.new("Frame")
+    ApplyProperties(RGBLineFix, {
+        Name = "RGBLineFix",
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 0, 2),
+        Size = UDim2.new(1, 0, 0, 1),
+        ZIndex = 2,
+        Parent = RGBLine
     })
 
     -- 自定義拖拽邏輯 (取代已棄用的 Draggable)
@@ -341,24 +378,41 @@ local success, err = pcall(function()
     ApplyProperties(LeftPanel, {
         Name = "LeftPanel",
         Parent = MainFrame,
-        BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+        BackgroundColor3 = Color3.fromRGB(22, 22, 22), -- 稍微亮一點點的深灰色
+        BorderSizePixel = 0,
         Size = UDim2.new(0, 160, 1, 0)
     })
 
     UICorner_Left.CornerRadius = UDim.new(0, 12)
     UICorner_Left.Parent = LeftPanel
 
-    -- 標題
+    -- 標題 (優化排版)
     ApplyProperties(Title, {
         Name = "Title",
         Parent = LeftPanel,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 15),
-        Size = UDim2.new(1, 0, 0, 50),
+        Position = UDim2.new(0, 0, 0, 20),
+        Size = UDim2.new(1, 0, 0, 40),
         Font = Enum.Font.GothamBold,
-        Text = "CAT V3\nLOADER",
+        Text = "CAT V3",
         TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 22
+        TextSize = 24,
+        TextXAlignment = Enum.TextXAlignment.Center
+    })
+
+    local SubTitle = Instance.new("TextLabel")
+    ApplyProperties(SubTitle, {
+        Name = "SubTitle",
+        Parent = LeftPanel,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 50),
+        Size = UDim2.new(1, 0, 0, 20),
+        Font = Enum.Font.GothamMedium,
+        Text = "PREMIUM LOADER",
+        TextColor3 = Color3.fromRGB(150, 150, 150),
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextTransparency = 0.3
     })
 
     -- 狀態顯示 (大廳/遊戲中)
@@ -448,13 +502,6 @@ local success, err = pcall(function()
     local CurrentTab = nil
 
     -- === 連接管理系統 (防止內存洩漏) ===
-    local Connections = {}
-    local function SafeConnect(signal, callback)
-        local connection = signal:Connect(callback)
-        table.insert(Connections, connection)
-        return connection
-    end
-
     local function Cleanup()
         local success, err = pcall(function()
             _G.CatLoaderRunning = false
@@ -496,18 +543,34 @@ local success, err = pcall(function()
         
         -- 分頁按鈕
         ApplyProperties(TabButton, {
-            Name = name .. "Tab",
+            Name = name .. "Button",
             Parent = TabContainer,
-            BackgroundColor3 = Color3_fromRGB(40, 40, 40),
-            Size = UDim2_new(0.9, 0, 0, 40),
-            Font = Enum.Font.GothamSemibold,
+            BackgroundColor3 = Color3_fromRGB(28, 28, 28),
+            BorderSizePixel = 0,
+            Size = UDim2_new(0, 140, 0, 32),
+            Font = Enum.Font.GothamMedium,
             Text = name,
-            TextColor3 = Color3_fromRGB(200, 200, 200),
-            TextSize = 14
+            TextColor3 = Color3_fromRGB(180, 180, 180),
+            TextSize = 13
         })
         
-        TBCorner.CornerRadius = UDim.new(0, 6)
+        TBCorner.CornerRadius = UDim.new(0, 4)
         TBCorner.Parent = TabButton
+        
+        -- 懸停效果
+        SafeConnect(TabButton.MouseEnter, function()
+            if CurrentTab and CurrentTab.Button ~= TabButton then
+                TabButton.BackgroundColor3 = Color3_fromRGB(40, 40, 40)
+                TabButton.TextColor3 = Color3_fromRGB(255, 255, 255)
+            end
+        end)
+        
+        SafeConnect(TabButton.MouseLeave, function()
+            if CurrentTab and CurrentTab.Button ~= TabButton then
+                TabButton.BackgroundColor3 = Color3_fromRGB(28, 28, 28)
+                TabButton.TextColor3 = Color3_fromRGB(180, 180, 180)
+            end
+        end)
         
         -- 分頁內容頁面
         ApplyProperties(Page, {
@@ -553,36 +616,58 @@ local success, err = pcall(function()
         ApplyProperties(Button, {
             Name = name,
             Parent = targetPage,
-            BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-            Size = UDim2.new(0.96, 0, 0, 65),
+            BackgroundColor3 = Color3.fromRGB(24, 24, 24),
+            Size = UDim2.new(0.96, 0, 0, 70), -- 稍微高一點
             Font = Enum.Font.GothamBold,
             Text = "  " .. name,
             TextColor3 = Color3.fromRGB(255, 255, 255),
-            TextSize = 16,
+            TextSize = 15,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
-            AutoButtonColor = true
+            AutoButtonColor = false, -- 手動控制效果
+            BorderSizePixel = 0
         })
         
+        local ButtonStroke = Instance.new("UIStroke")
+        ApplyProperties(ButtonStroke, {
+            Color = Color3.fromRGB(40, 40, 40),
+            Thickness = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+            Parent = Button
+        })
+
         BCorner.CornerRadius = UDim.new(0, 8)
         BCorner.Parent = Button
         
         ApplyProperties(DescLabel, {
             Parent = Button,
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, 10, 0, 32),
-            Size = UDim2.new(1, -20, 0, 28),
+            Position = UDim2.new(0, 10, 0, 35),
+            Size = UDim2.new(1, -20, 0, 25),
             Font = Enum.Font.Gotham,
             Text = desc,
-            TextColor3 = Color3.fromRGB(160, 160, 160),
+            TextColor3 = Color3.fromRGB(130, 130, 130),
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-            TextWrapped = true
+            TextWrapped = true,
+            TextTransparency = 0.2
         })
 
-        Button.MouseButton1Click:Connect(function()
-            local originalColor = Button.BackgroundColor3
-            Button.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+        -- 按鈕交互效果
+        SafeConnect(Button.MouseEnter, function()
+            Button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            ButtonStroke.Color = Color3.fromRGB(60, 60, 60)
+        end)
+        
+        SafeConnect(Button.MouseLeave, function()
+            Button.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+            ButtonStroke.Color = Color3.fromRGB(40, 40, 40)
+        end)
+
+        SafeConnect(Button.MouseButton1Click, function()
+            Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            task_wait(0.1)
+            Button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
             
             task.spawn(function()
                 Notify("正在執行", "正在啟動 " .. name .. "...", "Info")
@@ -1767,30 +1852,34 @@ local success, err = pcall(function()
     SafeConnect(CloseButton.MouseButton1Click, Cleanup)
 
     -- === 啟動 GUI ===
-    -- RGB 循環效果
+    -- RGB 循環效果 (優化版)
     task_spawn(function()
         local hue = 0
         local UIGradient = Instance.new("UIGradient")
-        UIGradient.Parent = MainFrame
+        UIGradient.Parent = RGBLine
         
         while ScreenGui and ScreenGui.Parent do
             hue = (hue + 1) % 360
-            local color1 = Color3_fromHSV(hue / 360, 0.8, 1)
-            local color2 = Color3_fromHSV(((hue + 60) % 360) / 360, 0.8, 1)
+            local color1 = Color3_fromHSV(hue / 360, 0.7, 1) -- 飽和度稍微降低一點看起來更高級
+            local color2 = Color3_fromHSV(((hue + 60) % 360) / 360, 0.7, 1)
             
             UIGradient.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, color1),
                 ColorSequenceKeypoint.new(1, color2)
             })
-            UIGradient.Rotation = (hue * 2) % 360
+            UIGradient.Rotation = (hue * 3) % 360 -- 加快旋轉速度
             
-            -- 更新分頁選中顏色和標題顏色
+            -- 同步更新標題和分頁顏色
+            Title.TextColor3 = color1
+            if SubTitle then SubTitle.TextColor3 = color2 end
+            
             if CurrentTab and CurrentTab.Button then
                 CurrentTab.Button.BackgroundColor3 = color1
+                -- 也可以讓按鈕內文字顏色稍微變化
+                CurrentTab.Button.TextColor3 = Color3_fromRGB(255, 255, 255)
             end
-            Title.TextColor3 = color1
             
-            task_wait(0.05)
+            task_wait(0.03) -- 稍微加快循環速度
         end
     end)
 
