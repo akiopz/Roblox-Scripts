@@ -672,57 +672,77 @@ function functionsModule.Init(env)
         env_global.AntiReport = state
         if not env_global.AntiReport then return end
         
-        -- 進階抗舉報邏輯：攔截、混淆並偵測舉報者
+        -- 1. 初始化全域攔截清單 (黑名單)
+        local Blacklist = {
+            -- 舉報相關
+            "ReportPlayer", "ReportAbuse", "SubmitReport", "SendReport",
+            "PerformReport", "ClientReport", "ReportUser", "SendAbuseReport",
+            -- 分析與追蹤 (防止開發者追蹤異常行為)
+            "Analytics", "GoogleAnalytics", "LogEvent", "Telemetry", "TrackBehavior",
+            "SendAnalytics", "RecordEvent", "Diagnostic", "Playfab",
+            -- 疑似反作弊與檢測
+            "AC_Update", "ClientCheck", "Violation", "SecurityCheck", "VerifyClient",
+            "Detection", "CheatLog", "BanMe", "KickMe", "SuspiciousActivity"
+        }
+
+        -- 2. 實作核心鉤子 (Metatable Hooking) - 這是目前最強大的攔截方式
         task.spawn(function()
-            local reportRemotes = {
-                "ReportPlayer", "ReportAbuse", "SubmitReport", "SendReport",
-                "PerformReport", "ClientReport", "ReportUser"
-            }
-            
-            -- 1. 嘗試偵測誰在調用舉報遠程
-            while env_global.AntiReport and task.wait(0.5) do
-                for _, name in ipairs(reportRemotes) do
-                    local r = ReplicatedStorage:FindFirstChild(name, true)
-                    if r and r:IsA("RemoteEvent") then
-                        -- 透過監聽遠程事件的調用（在部分環境下可實現）
-                        -- 這裡模擬一個偵測邏輯：當有人指向你並停留過久，或特定 UI 觸發時提示
-                        -- 註：Roblox 官方報告是透過 CoreGui 處理的，通常無法直接偵測具體玩家
-                        -- 但我們可以偵測「正在觀察你」的玩家，這通常是舉報的前兆
-                        for _, player in pairs(Players:GetPlayers()) do
-                            if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                                local targetPos = player.Character.HumanoidRootPart.Position
-                                local myPos = lplr.Character.HumanoidRootPart.Position
-                                local dist = (targetPos - myPos).Magnitude
-                                
-                                -- 如果對方距離適中且視線正對著你（可能正在點擊舉報）
-                                if dist < 50 and dist > 5 then
-                                    local lookVec = player.Character.HumanoidRootPart.CFrame.LookVector
-                                    local toMe = (myPos - targetPos).Unit
-                                    local dot = lookVec:Dot(toMe)
-                                    
-                                    if dot > 0.95 then -- 對方正盯著你
-                                        if not env_global["Warning_"..player.Name] then
-                                            env_global["Warning_"..player.Name] = true
-                                            Notify("舉報預警", "玩家 [" .. player.Name .. "] 可能正在觀察或舉報你！", "Warning")
-                                            task.delay(10, function() env_global["Warning_"..player.Name] = nil end)
-                                        end
-                                    end
-                                end
+            if not getgenv().GlobalInterceptionInitialized then
+                getgenv().GlobalInterceptionInitialized = true
+                
+                local mt = getrawmetatable(game)
+                local old_nc = mt.__namecall
+                setreadonly(mt, false)
+
+                mt.__namecall = newcclosure(function(self, ...)
+                    local method = getnamecallmethod()
+                    local args = {...}
+
+                    if env_global.AntiReport and (method == "FireServer" or method == "InvokeServer") then
+                        local remoteName = tostring(self)
+                        for _, blocked in ipairs(Blacklist) do
+                            if remoteName:find(blocked) then
+                                -- Notify("攔截成功", "已阻止遠程調用: " .. remoteName, "Info")
+                                return nil -- 徹底阻止調用
                             end
                         end
+                    end
+                    return old_nc(self, ...)
+                end)
+                
+                setreadonly(mt, true)
+                Notify("抗舉報系統", "全域元表鉤子 (Metatable Hook) 已啟動", "Success")
+            end
+        end)
 
-                        -- 攔截邏輯保持不變
-                        local oldFire = r.FireServer
-                        if oldFire and not getgenv().ReportHooked then
-                            getgenv().ReportHooked = true
-                            Notify("抗舉報", "系統已自動攔截舉報遠程發送", "Success")
+        -- 3. 舉報者偵測邏輯 (保持原有預警功能)
+        task.spawn(function()
+            while env_global.AntiReport and task.wait(0.5) do
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        local targetPos = player.Character.HumanoidRootPart.Position
+                        local myPos = lplr.Character.HumanoidRootPart.Position
+                        local dist = (targetPos - myPos).Magnitude
+                        
+                        if dist < 50 and dist > 5 then
+                            local lookVec = player.Character.HumanoidRootPart.CFrame.LookVector
+                            local toMe = (myPos - targetPos).Unit
+                            local dot = lookVec:Dot(toMe)
+                            
+                            if dot > 0.95 then -- 對方正盯著你
+                                if not env_global["Warning_"..player.Name] then
+                                    env_global["Warning_"..player.Name] = true
+                                    Notify("舉報預警", "玩家 [" .. player.Name .. "] 可能正在觀察或舉報你！", "Warning")
+                                    task.delay(10, function() env_global["Warning_"..player.Name] = nil end)
+                                end
+                            end
                         end
                     end
                 end
             end
         end)
 
-        Notify("伺服器功能", "抗舉報模式已升級：新增舉報者預警偵測", "Success")
+        Notify("伺服器功能", "攔截邏輯已強化：已啟用核心層級全域攔截", "Success")
     end
 
     CatFunctions.ToggleCustomMatchExploit = function(state)
