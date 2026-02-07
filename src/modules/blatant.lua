@@ -236,6 +236,9 @@ function BlatantModule.Init(Gui, Notify)
                     {id = "emerald_armor", cost = 40, currency = "emerald"},
                     {id = "diamond_armor", cost = 8, currency = "emerald"},
                     {id = "iron_armor", cost = 120, currency = "iron"},
+                    {id = "telepearl", cost = 1, currency = "emerald"}, -- 加入傳送珍珠
+                    {id = "balloon", cost = 2, currency = "emerald"},   -- 加入氣球
+                    {id = "fireball", cost = 40, currency = "iron"},    -- 加入火球
                     {id = "wool_white", cost = 16, currency = "iron"}
                 }
                 

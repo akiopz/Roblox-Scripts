@@ -316,58 +316,53 @@ function FunctionsModule.Init(env)
         return _G.AutoSprint
     end
 
-    -- Fly (飛行)
-    CatFunctions.ToggleFly = function(state)
-        if state == nil then _G.FlyEnabled = not _G.FlyEnabled else _G.FlyEnabled = state end
-        local char = lp.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if _G.FlyEnabled then
-                hum.PlatformStand = true
-                task_spawn(function()
-                    while _G.FlyEnabled and hum.PlatformStand do
-                        local hrp = char:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local moveDirection = lp.MoveDirection
-                            local flySpeed = _G.FlySpeed or 1
-                            if moveDirection.Magnitude > 0 then
-                                hrp.CFrame = hrp.CFrame + (moveDirection * flySpeed)
-                            end
-                            local UserInputService = game:GetService("UserInputService")
-                            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                                hrp.CFrame = hrp.CFrame + Vector3_new(0, flySpeed, 0)
-                            end
-                            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-                                hrp.CFrame = hrp.CFrame - Vector3_new(0, flySpeed, 0)
-                            end
-                        end
-                        task_wait()
-                    end
-                end)
-            else
-                hum.PlatformStand = false
-            end
-        end
-        return _G.FlyEnabled
-    end
-
-    -- Speed (加速)
+    -- Speed (高級繞過)
     CatFunctions.ToggleSpeed = function(state)
         if state == nil then _G.SpeedEnabled = not _G.SpeedEnabled else _G.SpeedEnabled = state end
         if _G.SpeedEnabled then
             task_spawn(function()
                 while _G.SpeedEnabled and task_wait() do
-                    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        hum.WalkSpeed = _G.SpeedValue or 23
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                        -- 使用 Velocity 繞過 Anticheat
+                        local speed = _G.SpeedValue or 23
+                        local velo = hum.MoveDirection * speed
+                        hrp.Velocity = Vector3_new(velo.X, hrp.Velocity.Y, velo.Z)
                     end
                 end
             end)
-        else
-            local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = 16 end
         end
         return _G.SpeedEnabled
+    end
+
+    -- Fly (高級繞過)
+    CatFunctions.ToggleFly = function(state)
+        if state == nil then _G.FlyEnabled = not _G.FlyEnabled else _G.FlyEnabled = state end
+        if _G.FlyEnabled then
+            task_spawn(function()
+                local UIS = game:GetService("UserInputService")
+                local bv = Instance.new("BodyVelocity")
+                bv.MaxForce = Vector3_new(1e6, 1e6, 1e6)
+                bv.Velocity = Vector3_new(0, 0, 0)
+                while _G.FlyEnabled and task_wait() do
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if hrp and hum then
+                        bv.Parent = hrp
+                        local moveDir = hum.MoveDirection
+                        local up = UIS:IsKeyDown(Enum.KeyCode.Space) and 1 or (UIS:IsKeyDown(Enum.KeyCode.LeftShift) and -1 or 0)
+                        bv.Velocity = (moveDir * 50) + Vector3_new(0, up * 50, 0)
+                    else
+                        bv.Parent = nil
+                    end
+                end
+                bv:Destroy()
+            end)
+        end
+        return _G.FlyEnabled
     end
 
     -- Auto Clicker (自動連點)
@@ -595,7 +590,48 @@ function FunctionsModule.Init(env)
         return _G.PlayerTracker
     end
 
-    -- Auto Balloon (自動氣球)
+    -- Bed Nuker (自動拆床)
+    CatFunctions.ToggleBedNuker = function(state)
+        if state == nil then _G.BedNuker = not _G.BedNuker else _G.BedNuker = state end
+        if _G.BedNuker then
+            task_spawn(function()
+                while _G.BedNuker and task_wait(0.2) do
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        for _, v in ipairs(workspace:GetDescendants()) do
+                            if v.Name == "bed" and v:IsA("BasePart") then
+                                local team = v:GetAttribute("Team")
+                                if team ~= lp.Team then
+                                    local dist = (hrp.Position - v.Position).Magnitude
+                                    if dist < 25 then
+                                        -- 嘗試多種可能的遠程事件
+                                        local remotes = {
+                                            ReplicatedStorage:FindFirstChild("DamageBlock", true),
+                                            ReplicatedStorage:FindFirstChild("HitBlock", true),
+                                            ReplicatedStorage:FindFirstChild("BreakBlock", true)
+                                        }
+                                        for _, remote in ipairs(remotes) do
+                                            if remote then
+                                                remote:FireServer({
+                                                    ["block"] = v,
+                                                    ["position"] = v.Position,
+                                                    ["direction"] = Vector3_new(0, 1, 0)
+                                                })
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+        return _G.BedNuker
+    end
+
+    -- Auto Balloon (自動氣球防掉落)
     CatFunctions.ToggleAutoBalloon = function(state)
         if state == nil then _G.AutoBalloon = not _G.AutoBalloon else _G.AutoBalloon = state end
         if _G.AutoBalloon then
@@ -603,13 +639,23 @@ function FunctionsModule.Init(env)
                 while _G.AutoBalloon and task_wait(0.1) do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp and hrp.Position.Y < -20 then -- 掉入虛空深度
-                        local balloon = lp.Backpack:FindFirstChild("balloon") or char:FindFirstChild("balloon")
+                    if hrp and hrp.Position.Y < -10 then -- 掉入虛空深度
+                        -- 檢查是否有氣球
+                        local balloon = lp.Backpack:FindFirstChild("balloon") or (char and char:FindFirstChild("balloon"))
+                        if not balloon then
+                            -- 嘗試自動購買氣球 (如果錢夠)
+                            local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true)
+                            if remote then remote:FireServer({["item"] = "balloon"}) end
+                        end
+                        
+                        balloon = lp.Backpack:FindFirstChild("balloon") or (char and char:FindFirstChild("balloon"))
                         if balloon then
                             local hum = char:FindFirstChildOfClass("Humanoid")
-                            if hum then hum:EquipTool(balloon) end
-                            balloon:Activate()
-                            task_wait(0.3)
+                            if hum then 
+                                hum:EquipTool(balloon)
+                                task_wait(0.05)
+                                balloon:Activate()
+                            end
                         end
                     end
                 end

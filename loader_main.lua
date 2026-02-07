@@ -77,7 +77,30 @@ local success, err = pcall(function()
     local firstTab = GuiUtils.CreateTab("自動核心")
     GuiUtils.CreateTab("視覺功能")
     GuiUtils.CreateTab("暴力功能")
-    GuiUtils.CreateTab("BEDWARS 專區")
+    -- BEDWARS 專區
+    GuiUtils.AddScript("BEDWARS 專區", "自動拆床 (Bed Nuker)", "自動拆除 25 格範圍內的敵方床位。", function()
+        CatFunctions.ToggleBedNuker()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動氣球 (Auto Balloon)", "掉落虛空時自動購買並使用氣球。", function()
+        CatFunctions.ToggleAutoBalloon()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動嗑藥 (Auto Consume)", "低血量時自動使用藥水或食物。", function()
+        Blatant.ToggleAutoConsume()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "全自動購買 (Auto Buy Pro)", "根據資源優先級購買最強裝備。", function()
+        Blatant.ToggleAutoBuyPro(not _G.AutoBuyPro)
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "方塊破壞 (Nuker)", "自動破壞周圍 15 格內的所有方塊。", function()
+        CatFunctions.ToggleNuker()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動嘲諷 (Auto Toxic)", "擊殺敵人後自動發送嘲諷訊息。", function()
+        Blatant.ToggleAutoToxic(not _G.AutoToxic)
+    end)
     
     -- 默認選中第一個分頁
     if firstTab then firstTab.Switch() end
