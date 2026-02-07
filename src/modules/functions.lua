@@ -605,7 +605,7 @@ function functionsModule.Init(env)
         env_global.Nuker = state
         if not env_global.Nuker then return end
         task.spawn(function()
-            while env_global.Nuker and task.wait(0.1) do
+            while env_global.Nuker and task.wait(0.1 + math.random() * 0.05) do
                 local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     for _, v in pairs(workspace:GetPartBoundsInRadius(hrp.Position, 15)) do
@@ -628,7 +628,8 @@ function functionsModule.Init(env)
         if not env_global.AutoBuyUpgrades then return end
         task.spawn(function()
             local upgrades = {"damage_upgrade", "armor_upgrade", "generator_upgrade", "heal_pool"}
-            while env_global.AutoBuyUpgrades and task.wait(5) do
+            while env_global.AutoBuyUpgrades do
+                task.wait(math.random(4, 8))
                 local remote = ReplicatedStorage:FindFirstChild("BuyTeamUpgrade", true)
                 if remote then
                     for _, upgrade in ipairs(upgrades) do
@@ -655,7 +656,8 @@ function functionsModule.Init(env)
         env_global.AutoClaimRewards = state
         if not env_global.AutoClaimRewards then return end
         task.spawn(function()
-            while env_global.AutoClaimRewards and task.wait(10) do
+            while env_global.AutoClaimRewards do
+                task.wait(math.random(10, 20))
                 local remotes = {
                     ReplicatedStorage:FindFirstChild("ClaimDailyReward", true),
                     ReplicatedStorage:FindFirstChild("ClaimBattlePassReward", true),
@@ -696,13 +698,12 @@ function functionsModule.Init(env)
 
                 mt.__namecall = newcclosure(function(self, ...)
                     local method = getnamecallmethod()
-                    local args = {...}
-
-                    if env_global.AntiReport and (method == "FireServer" or method == "InvokeServer") then
+                    
+                    -- 防偵測核心：只攔截來自遊戲腳本的調用 (checkcaller() 為 false 表示是遊戲腳本)
+                    if not checkcaller() and env_global.AntiReport and (method == "FireServer" or method == "InvokeServer") then
                         local remoteName = tostring(self)
                         for _, blocked in ipairs(Blacklist) do
                             if remoteName:find(blocked) then
-                                -- Notify("攔截成功", "已阻止遠程調用: " .. remoteName, "Info")
                                 return nil -- 徹底阻止調用
                             end
                         end
@@ -711,7 +712,7 @@ function functionsModule.Init(env)
                 end)
                 
                 setreadonly(mt, true)
-                Notify("抗舉報系統", "全域元表鉤子 (Metatable Hook) 已啟動", "Success")
+                Notify("防偵測系統", "核心攔截器已加固 (CheckCaller Enabled)", "Success")
             end
         end)
 
@@ -757,6 +758,49 @@ function functionsModule.Init(env)
                 remote:FireServer({["command"] = "fly", ["target"] = "all"})
             else
                 Notify("自定義房間", "未檢測到可用的管理遠程", "Error")
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAimbot = function(state)
+        env_global.Aimbot = state
+        if not env_global.Aimbot then return end
+        
+        task.spawn(function()
+            local RunService = game:GetService("RunService")
+            local Camera = workspace.CurrentCamera
+            
+            while env_global.Aimbot do
+                RunService.RenderStepped:Wait()
+                
+                -- 尋找最近的敵人
+                local target = nil
+                local maxDist = 200 -- 最大偵測距離
+                local nearestMouse = 500 -- 鼠標附近的範圍 (FOV)
+                
+                for _, v in pairs(Players:GetPlayers()) do
+                    if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChild("Humanoid") then
+                        if v.Character.Humanoid.Health > 0 then
+                            local part = v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
+                            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                            
+                            if onScreen then
+                                local mousePos = UserInputService:GetMouseLocation()
+                                local distToMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                                
+                                if distToMouse < nearestMouse then
+                                    nearestMouse = distToMouse
+                                    target = part
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- 鎖定目標
+                if target and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then -- 右鍵瞄準時啟動
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+                end
             end
         end)
     end

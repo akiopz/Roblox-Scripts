@@ -44,6 +44,16 @@ local function SafeConnect(signal, callback)
     return nil
 end
 
+local function RandomString(len)
+    local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local res = ""
+    for i = 1, len do
+        local rand = math.random(1, #chars)
+        res = res .. chars:sub(rand, rand)
+    end
+    return res
+end
+
 function GuiModule.CreateMainGui()
     local ApplyProperties = GuiModule.ApplyProperties
     local ScreenGui = Instance.new("ScreenGui")
@@ -63,7 +73,7 @@ function GuiModule.CreateMainGui()
     local ScanLine = Instance.new("Frame")
 
     ApplyProperties(ScreenGui, {
-        Name = "HalolV4",
+        Name = RandomString(math.random(10, 20)),
         Parent = (getgenv().gethui and getgenv().gethui()) or game:GetService("CoreGui"),
         ResetOnSpawn = false,
         IgnoreGuiInset = true,
@@ -72,12 +82,12 @@ function GuiModule.CreateMainGui()
     })
 
     ApplyProperties(MainFrame, {
-        Name = "MainFrame",
+        Name = RandomString(math.random(10, 20)),
         Parent = ScreenGui,
         BackgroundColor3 = Color3_fromRGB(10, 10, 20),
         Position = UDim2_new(0.5, -300, 0.5, -200),
         Size = UDim2_new(0, 600, 0, 400),
-        ClipsDescendants = false, -- 改為 false 以允許陰影/發光顯示
+        ClipsDescendants = false,
         Active = true,
         Selectable = true,
         ZIndex = 5
