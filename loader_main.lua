@@ -113,8 +113,14 @@ local success, err = pcall(function()
         AI.ToggleGodMode(not _G.GodModeAI)
     end)
 
-    GuiUtils.AddScript("自動核心", "加速移動 (Speed)", "大幅提升玩家移動速度。", function()
+    GuiUtils.AddScript("自動核心", "加速移動 (Speed)", "提升移動速度 (脈衝繞過模式)。", function()
         CatFunctions.ToggleSpeed()
+    end)
+
+    GuiUtils.AddScript("自動核心", "速度設定", "調整 Speed 數值 (當前: " .. (_G.SpeedValue or 23) .. ")。", function()
+        _G.SpeedValue = (_G.SpeedValue or 23) + 5
+        if _G.SpeedValue > 50 then _G.SpeedValue = 20 end
+        Notify("加速移動", "速度已設定為: " .. _G.SpeedValue, 2)
     end)
 
     GuiUtils.AddScript("自動核心", "無減速 (No Slow Down)", "防止在使用物品或攻擊時減速。", function()
@@ -125,8 +131,14 @@ local success, err = pcall(function()
         CatFunctions.ToggleAutoClicker()
     end)
 
-    GuiUtils.AddScript("自動核心", "殺戮光環 (Kill Aura)", "自動攻擊範圍內的敵對玩家。", function()
+    GuiUtils.AddScript("自動核心", "殺戮光環 (Kill Aura)", "自動攻擊範圍內的敵對玩家 (含 CPS 模擬)。", function()
         CatFunctions.ToggleKillAura()
+    end)
+
+    GuiUtils.AddScript("自動核心", "CPS 設定", "設定 KillAura 的每秒點擊數 (當前: " .. (_G.KillAuraCPS or 10) .. ")。", function()
+        _G.KillAuraCPS = (_G.KillAuraCPS or 10) + 2
+        if _G.KillAuraCPS > 20 then _G.KillAuraCPS = 8 end
+        Notify("殺戮光環", "CPS 已設定為: " .. _G.KillAuraCPS, 2)
     end)
 
     GuiUtils.AddScript("自動核心", "光環設置 (Aura Setting)", "切換多目標模式 (當前: " .. (_G.KillAuraMaxTargets == 1 and "單目標" or "多目標") .. ")。", function()

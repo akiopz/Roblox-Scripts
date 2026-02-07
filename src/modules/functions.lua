@@ -18,25 +18,34 @@ function FunctionsModule.Init(env)
     local CatFunctions = {}
     _G.CatFunctions = CatFunctions
 
-    -- KillAura
+    -- KillAura (繞過強化版)
     CatFunctions.ToggleKillAura = function(state)
         if state == nil then _G.KillAura = not _G.KillAura else _G.KillAura = state end
         if _G.KillAura then
             task_spawn(function()
-                while _G.KillAura and task_wait(0.02) do
+                while _G.KillAura do
+                    -- 隨機化攻擊延遲 (CPS 模擬)
+                    local cps = _G.KillAuraCPS or math.random(8, 12)
+                    task_wait(1 / cps)
+                    
                     local loop_success, loop_err = pcall(function()
                         local char = lp.Character
                         local hrp = char and char:FindFirstChild("HumanoidRootPart")
                         if not hrp then return end
+                        
                         local maxDist = _G.KillAuraRange or 22
                         local targets = {}
+                        
                         for _, player in ipairs(Players:GetPlayers()) do
                             if player ~= lp and player.Team ~= lp.Team and player.Character then
                                 local ehum = player.Character:FindFirstChildOfClass("Humanoid")
                                 local ehrp = player.Character:FindFirstChild("HumanoidRootPart")
                                 if ehum and ehum.Health > 0 and ehrp then
-                                    local predictedPos = ehrp.Position + (ehrp.Velocity * 0.1)
+                                    -- 增加動態預測
+                                    local ping = 0.1 -- 假設延遲
+                                    local predictedPos = ehrp.Position + (ehrp.Velocity * ping)
                                     local dist = (hrp.Position - predictedPos).Magnitude
+                                    
                                     if dist < maxDist then
                                         table.insert(targets, player)
                                     end
@@ -45,28 +54,35 @@ function FunctionsModule.Init(env)
                         end
 
                         if #targets > 0 then
-                            -- 排序最近的目標以便看向它
                             table.sort(targets, function(a, b)
                                 return (hrp.Position - a.Character.HumanoidRootPart.Position).Magnitude < (hrp.Position - b.Character.HumanoidRootPart.Position).Magnitude
                             end)
                             
-                            local primaryTarget = targets[1]
-                            if _G.KillAuraFaceTarget then
-                                hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(primaryTarget.Character.HumanoidRootPart.Position.X, hrp.Position.Y, primaryTarget.Character.HumanoidRootPart.Position.Z))
-                            end
-
-                            local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or ReplicatedStorage:FindFirstChild("CombatEvents", true)
-                            if remote and remote:IsA("RemoteEvent") then
-                                for i = 1, math.min(#targets, _G.KillAuraMaxTargets or 3) do
-                                    remote:FireServer({["entity"] = targets[i].Character})
+                            local maxTargets = _G.KillAuraMaxTargets or 3
+                            for i = 1, math.min(#targets, maxTargets) do
+                                local targetChar = targets[i].Character
+                                local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
+                                
+                                -- 模擬視線看向目標 (可選繞過)
+                                if _G.KillAuraFaceTarget and i == 1 then
+                                    hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(targetHrp.Position.X, hrp.Position.Y, targetHrp.Position.Z))
                                 end
-                            else
-                                local tool = char:FindFirstChildOfClass("Tool")
-                                if tool then tool:Activate() end
+
+                                local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or ReplicatedStorage:FindFirstChild("CombatEvents", true)
+                                if remote and remote:IsA("RemoteEvent") then
+                                    -- Bedwars 專用遠端調用優化
+                                    remote:FireServer({
+                                        ["entity"] = targetChar,
+                                        ["weapon"] = char:FindFirstChildOfClass("Tool"),
+                                        ["hitPosition"] = targetHrp.Position + Vector3_new(math.random(-1,1)/10, math.random(-1,1)/10, math.random(-1,1)/10)
+                                    })
+                                else
+                                    local tool = char:FindFirstChildOfClass("Tool")
+                                    if tool then tool:Activate() end
+                                end
                             end
                         end
                     end)
-                    if not loop_success then task_wait(0.5) end
                 end
             end)
         end
@@ -182,14 +198,33 @@ function FunctionsModule.Init(env)
         return _G.AutoToolFB
     end
 
-    -- NoFall
+    -- NoFall (繞過強化版)
     CatFunctions.ToggleNoFall = function(state)
         if state == nil then _G.NoFall = not _G.NoFall else _G.NoFall = state end
         if _G.NoFall then
             task_spawn(function()
                 while _G.NoFall and task_wait(0.1) do
-                    local remote = ReplicatedStorage:FindFirstChild("FallDamage", true)
-                    if remote and remote:IsA("RemoteEvent") then remote:FireServer(0) end
+                    local char = lp.Character
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        -- 繞過方式 1: 定期發送 0 傷害遠端 (基礎)
+                        local remote = ReplicatedStorage:FindFirstChild("FallDamage", true)
+                        if remote and remote:IsA("RemoteEvent") then remote:FireServer(0) end
+                        
+                        -- 繞過方式 2: 模擬接地狀態 (進階)
+                        if hum:GetState() == Enum.HumanoidStateType.Freefall then
+                            -- 在即將落地時短暫切換狀態
+                            -- 注意: 這可能需要 Raycast 檢測高度
+                            local hrp = char:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+                                local ray = Ray.new(hrp.Position, Vector3_new(0, -10, 0))
+                                local part, pos = workspace:FindPartOnRay(ray, char)
+                                if part then
+                                    hum:ChangeState(Enum.HumanoidStateType.Landed)
+                                end
+                            end
+                        end
+                    end
                 end
             end)
         end
@@ -253,7 +288,7 @@ function FunctionsModule.Init(env)
         return _G.AutoResourceFarm
     end
 
-    -- Velocity (Anti-Knockback)
+    -- Velocity (Anti-Knockback 繞過版)
     CatFunctions.ToggleVelocity = function(state)
         if state == nil then _G.VelocityEnabled = not _G.VelocityEnabled else _G.VelocityEnabled = state end
         if _G.VelocityEnabled then
@@ -262,8 +297,8 @@ function FunctionsModule.Init(env)
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp then
-                        -- 自定義反擊退比例 (預設 0%)
-                        local horizontal = _G.VelocityHorizontal or 0
+                        -- 繞過建議: 不要設為 0，設為 10-20% 以模擬物理效果
+                        local horizontal = _G.VelocityHorizontal or 15
                         local vertical = _G.VelocityVertical or 100
                         hrp.Velocity = Vector3_new(hrp.Velocity.X * (horizontal / 100), hrp.Velocity.Y * (vertical / 100), hrp.Velocity.Z * (horizontal / 100))
                     end
@@ -316,19 +351,22 @@ function FunctionsModule.Init(env)
         return _G.AutoSprint
     end
 
-    -- Speed (高級繞過)
+    -- Speed (高級繞過版)
     CatFunctions.ToggleSpeed = function(state)
         if state == nil then _G.SpeedEnabled = not _G.SpeedEnabled else _G.SpeedEnabled = state end
         if _G.SpeedEnabled then
             task_spawn(function()
+                local count = 0
                 while _G.SpeedEnabled and task_wait() do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum and hum.MoveDirection.Magnitude > 0 then
-                        -- 使用 Velocity 繞過 Anticheat
+                        count = count + 1
+                        -- 脈衝式移動繞過 (每 3 幀給予一次爆發)
                         local speed = _G.SpeedValue or 23
-                        local velo = hum.MoveDirection * speed
+                        local multiplier = (count % 3 == 0) and 1.5 or 0.8
+                        local velo = hum.MoveDirection * (speed * multiplier)
                         hrp.Velocity = Vector3_new(velo.X, hrp.Velocity.Y, velo.Z)
                     end
                 end
@@ -337,7 +375,7 @@ function FunctionsModule.Init(env)
         return _G.SpeedEnabled
     end
 
-    -- Fly (高級繞過)
+    -- Fly (高級繞過版)
     CatFunctions.ToggleFly = function(state)
         if state == nil then _G.FlyEnabled = not _G.FlyEnabled else _G.FlyEnabled = state end
         if _G.FlyEnabled then
@@ -346,15 +384,23 @@ function FunctionsModule.Init(env)
                 local bv = Instance.new("BodyVelocity")
                 bv.MaxForce = Vector3_new(1e6, 1e6, 1e6)
                 bv.Velocity = Vector3_new(0, 0, 0)
+                
+                local hoverTick = 0
                 while _G.FlyEnabled and task_wait() do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum then
                         bv.Parent = hrp
+                        hoverTick = hoverTick + 0.1
+                        -- 增加垂直微小震盪以模擬物理 (繞過靜止飛行檢測)
+                        local hover = math.sin(hoverTick) * 0.5
+                        
                         local moveDir = hum.MoveDirection
                         local up = UIS:IsKeyDown(Enum.KeyCode.Space) and 1 or (UIS:IsKeyDown(Enum.KeyCode.LeftShift) and -1 or 0)
-                        bv.Velocity = (moveDir * 50) + Vector3_new(0, up * 50, 0)
+                        
+                        local flySpeed = _G.FlySpeed or 50
+                        bv.Velocity = (moveDir * flySpeed) + Vector3_new(0, (up * flySpeed) + hover, 0)
                     else
                         bv.Parent = nil
                     end
