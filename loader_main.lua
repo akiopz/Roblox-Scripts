@@ -14,7 +14,7 @@ env_global.ProjectileAura = env_global.ProjectileAura or false
 env_global.VelocityHorizontal = env_global.VelocityHorizontal or 15
 env_global.VelocityVertical = env_global.VelocityVertical or 100
 
-print("Halol V4.8 開始加載 (修復 UI 交互與拖動版本)...")
+print("Halol V4.8.1 開始加載 (強化抗舉報模式)...")
 
 -- 增加一個隨機數來徹底繞過快取
 local sessionID = tostring(math.random(100000, 999999))
@@ -36,7 +36,7 @@ local function Notify(title, text, duration)
     end)
 end
 
-Notify("Halol V4.8", "正在從雲端獲取最新組件 (強制刷新)...", 3)
+Notify("Halol V4.8.1", "正在從雲端獲取最新組件 (強制刷新)...", 3)
 
 local success, err = pcall(function()
     local HOSTS = {
@@ -83,18 +83,18 @@ local success, err = pcall(function()
     local utilsModule = GetScript("src/core/utils.lua")
     local GuiUtils = utilsModule.Init(mainGui)
 
-    Notify("Halol V4.8", "核心組件已就緒，載入介面中...", 3)
+    Notify("Halol V4.8.1", "核心組件已就緒，載入介面中...", 3)
     
     local functionsModule = GetScript("src/modules/functions.lua")
     local CatFunctions = functionsModule.Init(env)
     local blatantModule = GetScript("src/modules/blatant.lua")
-    local Blatant = blatantModule.Init(mainGui, function(...) Notify("Halol V4.8", ...) end, CatFunctions)
+    local Blatant = blatantModule.Init(mainGui, function(...) Notify("Halol V4.8.1", ...) end, CatFunctions)
 
     local aiModule = GetScript("src/modules/ai.lua")
     local AI = aiModule.Init(CatFunctions, Blatant)
 
     local visualsModule = GetScript("src/modules/visuals.lua")
-    local Visuals = visualsModule.Init(mainGui, function(...) Notify("Halol V4.8", ...) end)
+    local Visuals = visualsModule.Init(mainGui, function(...) Notify("Halol V4.8.1", ...) end)
 
     local firstTab = GuiUtils.CreateTab("自動核心")
     GuiUtils.AddScript("自動核心", "自動戰鬥 AI", "全自動尋路、資源採集與戰鬥", function(s) AI.Toggle(s) end, Notify)
@@ -146,7 +146,7 @@ local success, err = pcall(function()
     GuiUtils.AddScript("視覺顯示", "血量顯示", "在玩家頭頂顯示即時血量", function(s) Visuals.ToggleHealthDisplay(s) end, Notify)
     GuiUtils.AddScript("視覺顯示", "傷害指示器", "顯示造成的傷害數值動畫", function(s) CatFunctions.ToggleDamageIndicator(s) end, Notify)
 
-    Notify("Halol V4.8", "腳本已成功加載！", 5)
+    Notify("Halol V4.8.1", "腳本已成功加載！", 5)
 end)
 
 if not success then
