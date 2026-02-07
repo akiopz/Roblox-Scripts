@@ -14,6 +14,14 @@ local table = table or env_global.table
 local string = string or env_global.string
 local pcall = pcall or env_global.pcall
 
+-- 全局變量補齊 (針對某些執行器環境)
+local CFrame = CFrame or env_global.CFrame
+local Instance = Instance or env_global.Instance
+local Enum = Enum or env_global.Enum
+local Color3 = Color3 or env_global.Color3
+local BrickColor = BrickColor or env_global.BrickColor
+local UserInputService = game:GetService("UserInputService")
+
 local functionsModule = {}
 
 local Players = game:GetService("Players")
@@ -26,6 +34,16 @@ local Vector3_new = Vector3.new
 function functionsModule.Init(env)
     local CatFunctions = {}
     local Notify = env.Notify
+    local env_data = env.env -- 獲取環境函數 (getrawmetatable, setreadonly 等)
+
+    -- 提取環境函數以便直接使用
+    local getrawmetatable = env_data.getrawmetatable
+    local setreadonly = env_data.setreadonly
+    local newcclosure = env_data.newcclosure
+    local checkcaller = env_data.checkcaller
+    local getnamecallmethod = env_data.getnamecallmethod
+    local setfpscap = env_data.setfpscap
+    local gethui = env_data.gethui
 
     CatFunctions.ToggleKillAura = function(state)
         env_global.KillAura = state
@@ -443,19 +461,99 @@ function functionsModule.Init(env)
                     v.Character.HumanoidRootPart.Transparency = 1
                 end
             end
-            return 
+            return
         end
+        
         task.spawn(function()
             while env_global.HitboxExpander and task.wait(1) do
                 for _, v in pairs(Players:GetPlayers()) do
-                    if v ~= lplr and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                        v.Character.HumanoidRootPart.Size = Vector3_new(10, 10, 10)
-                        v.Character.HumanoidRootPart.Transparency = 0.7
-                        v.Character.HumanoidRootPart.CanCollide = false
+                    if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                        local hrp = v.Character.HumanoidRootPart
+                        hrp.Size = Vector3_new(env_global.HitboxSize or 15, env_global.HitboxSize or 15, env_global.HitboxSize or 15)
+                        hrp.Transparency = 0.7
+                        hrp.BrickColor = BrickColor.new("Bright blue")
+                        hrp.CanCollide = false
                     end
                 end
             end
         end)
+    end
+
+    -- 配置系統：記住設定
+    CatFunctions.ToggleAutoLobby = function(state)
+        env_global.AutoLobby = state
+        if not env_global.AutoLobby then return end
+        task.spawn(function()
+            while env_global.AutoLobby and task.wait(2) do
+                -- 檢測遊戲結束狀態 (通常會顯示勝利或失敗訊息)
+                local gui = lplr:FindFirstChild("PlayerGui")
+                local winLabel = gui and gui:FindFirstChild("VictoryLabel", true) or gui:FindFirstChild("GameOverLabel", true)
+                if winLabel and winLabel.Visible then
+                    Notify("系統", "檢測到遊戲結束，3秒後自動返回大廳...", "Info")
+                    task.wait(3)
+                    local remote = ReplicatedStorage:FindFirstChild("PlayAgain", true) or 
+                                   ReplicatedStorage:FindFirstChild("GoBackToLobby", true)
+                    if remote then
+                        remote:FireServer()
+                    else
+                        game:GetService("TeleportService"):Teleport(6872265039) -- Bedwars Lobby ID
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoRejoin = function(state)
+        env_global.AutoRejoin = state
+        if not env_global.AutoRejoin then return end
+        
+        -- 監聽斷線事件
+        local coreGui = game:GetService("CoreGui")
+        local connection
+        connection = coreGui.ChildAdded:Connect(function(child)
+            if not env_global.AutoRejoin then
+                connection:Disconnect()
+                return
+            end
+            if child.Name == "ErrorPrompt" then
+                Notify("自動重連", "檢測到斷線，正在嘗試重新連接...", "Warning")
+                task.wait(2)
+                game:GetService("TeleportService"):Teleport(game.PlaceId, lplr)
+            end
+        end)
+    end
+
+    CatFunctions.SaveConfig = function()
+        local config = {}
+        for k, v in pairs(env_global) do
+            -- 只保存布林值、數字和字符串設定，排除函數和執行個體
+            local t = typeof(v)
+            if t == "boolean" or t == "number" or t == "string" then
+                config[k] = v
+            end
+        end
+        
+        local success, json = pcall(function() return game:GetService("HttpService"):JSONEncode(config) end)
+        if success then
+            writefile("Halol_Config_" .. lplr.UserId .. ".json", json)
+            Notify("配置系統", "設定已成功保存", 2)
+        end
+    end
+
+    CatFunctions.LoadConfig = function()
+        local fileName = "Halol_Config_" .. lplr.UserId .. ".json"
+        if isfile(fileName) then
+            local success, content = pcall(function() return readfile(fileName) end)
+            if success then
+                local decodeSuccess, config = pcall(function() return game:GetService("HttpService"):JSONDecode(content) end)
+                if decodeSuccess then
+                    for k, v in pairs(config) do
+                        env_global[k] = v
+                    end
+                    Notify("配置系統", "已自動載入您的專屬設定", 3)
+                end
+            end
+        end
     end
 
     CatFunctions.ToggleAntiDead = function(state)
@@ -600,17 +698,6 @@ function functionsModule.Init(env)
         end
     end
 
-    CatFunctions.ToggleAutoRejoin = function(state)
-        env_global.AutoRejoin = state
-        local CoreGui = game:GetService("CoreGui")
-        local rejoinConn
-        rejoinConn = CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-            if env_global.AutoRejoin and child.Name == "ErrorPrompt" then
-                game:GetService("TeleportService"):Teleport(game.PlaceId)
-            end
-        end)
-    end
-
     CatFunctions.ToggleChatSpam = function(state)
         env_global.ChatSpam = state
         if not env_global.ChatSpam then return end
@@ -742,71 +829,137 @@ function functionsModule.Init(env)
         env_global.AntiReport = state
         if not env_global.AntiReport then return end
         
-        -- 1. 初始化全域攔截清單 (黑名單)
+        -- 1. 初始化全域攔截清單 (擴展黑名單)
         local Blacklist = {
-            -- 舉報相關
+            -- 舉報與封鎖
             "ReportPlayer", "ReportAbuse", "SubmitReport", "SendReport",
             "PerformReport", "ClientReport", "ReportUser", "SendAbuseReport",
-            -- 分析與追蹤 (防止開發者追蹤異常行為)
+            "ReportReason", "AbuseReport", "ReportCategory", "KickPlayer", "BanPlayer",
+            -- 分析、日誌與追蹤
             "Analytics", "GoogleAnalytics", "LogEvent", "Telemetry", "TrackBehavior",
-            "SendAnalytics", "RecordEvent", "Diagnostic", "Playfab",
-            -- 疑似反作弊與檢測
+            "SendAnalytics", "RecordEvent", "Diagnostic", "Playfab", "AppCenter",
+            "Bugsnag", "Sentry", "NewRelic", "InfluxDB", "Datadog", "SumoLogic",
+            -- 反作弊與客戶端檢測
             "AC_Update", "ClientCheck", "Violation", "SecurityCheck", "VerifyClient",
-            "Detection", "CheatLog", "BanMe", "KickMe", "SuspiciousActivity"
+            "Detection", "CheatLog", "BanMe", "KickMe", "SuspiciousActivity",
+            "AntiCheat", "CheatDetect", "ClientSideCheck", "ExploitDetect", "CheckClient",
+            "MemoryCheck", "ModuleCheck", "ProcessCheck", "ThreadCheck", "DebugCheck",
+            "SpeedCheck", "FlyCheck", "AuraCheck", "ReachCheck", "HitboxCheck",
+            -- 其他敏感行為
+            "ChatLog", "MessageLog", "ScriptLog", "ErrorLog", "CrashLog"
         }
 
-        -- 2. 實作核心鉤子 (Metatable Hooking) - 這是目前最強大的攔截方式
+        -- 2. 實作核心攔截器 (多重防禦機制)
         task.spawn(function()
             if not getgenv().GlobalInterceptionInitialized then
                 getgenv().GlobalInterceptionInitialized = true
                 
                 local mt = getrawmetatable(game)
                 local old_nc = mt.__namecall
+                local old_fs = Instance.new("RemoteEvent").FireServer
+                local old_is = Instance.new("RemoteFunction").InvokeServer
+                
                 setreadonly(mt, false)
 
+                -- 輔助函數：檢查是否應攔截
+                local function shouldBlock(self, method)
+                    if checkcaller() or not env_global.AntiReport then return false end
+                    if method ~= "FireServer" and method ~= "InvokeServer" then return false end
+                    
+                    local remoteName = tostring(self)
+                    for _, blocked in ipairs(Blacklist) do
+                        if remoteName:find(blocked) then
+                            return true
+                        end
+                    end
+                    return false
+                end
+
+                -- A. Metatable Hook (__namecall) - 攔截 self:Method(...)
                 mt.__namecall = newcclosure(function(self, ...)
                     local method = getnamecallmethod()
-                    
-                    -- 防偵測核心：只攔截來自遊戲腳本的調用 (checkcaller() 為 false 表示是遊戲腳本)
-                    if not checkcaller() and env_global.AntiReport and (method == "FireServer" or method == "InvokeServer") then
-                        local remoteName = tostring(self)
-                        for _, blocked in ipairs(Blacklist) do
-                            if remoteName:find(blocked) then
-                                return nil -- 徹底阻止調用
-                            end
-                        end
+                    if shouldBlock(self, method) then
+                        return nil
                     end
                     return old_nc(self, ...)
                 end)
                 
+                -- B. Index Hook (FireServer/InvokeServer) - 攔截 Method(self, ...)
+                local event_mt = getrawmetatable(Instance.new("RemoteEvent"))
+                local function_mt = getrawmetatable(Instance.new("RemoteFunction"))
+                
+                -- 攔截 FireServer
+                local old_event_fs = event_mt.FireServer
+                setreadonly(event_mt, false)
+                event_mt.FireServer = newcclosure(function(self, ...)
+                    if shouldBlock(self, "FireServer") then
+                        return nil
+                    end
+                    return old_event_fs(self, ...)
+                end)
+                setreadonly(event_mt, true)
+                
+                -- 攔截 InvokeServer
+                local old_func_is = function_mt.InvokeServer
+                setreadonly(function_mt, false)
+                function_mt.InvokeServer = newcclosure(function(self, ...)
+                    if shouldBlock(self, "InvokeServer") then
+                        return nil
+                    end
+                    return old_func_is(self, ...)
+                end)
+                setreadonly(function_mt, true)
+
                 setreadonly(mt, true)
-                Notify("防偵測系統", "核心攔截器已加固 (CheckCaller Enabled)", "Success")
+                Notify("防偵測系統", "核心攔截器已加固 (Triple-Layer Protection Enabled)", "Success")
             end
         end)
 
-        -- 3. 舉報者偵測邏輯 (保持原有預警功能)
+        -- 3. 進階舉報者偵測與自動避險
         task.spawn(function()
+            local observerCount = 0
+            local lastHopTime = tick()
+            
             while env_global.AntiReport and task.wait(0.5) do
+                local currentObservers = 0
                 for _, player in pairs(Players:GetPlayers()) do
                     if player ~= lplr and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                         local targetPos = player.Character.HumanoidRootPart.Position
                         local myPos = lplr.Character.HumanoidRootPart.Position
                         local dist = (targetPos - myPos).Magnitude
                         
-                        if dist < 50 and dist > 5 then
+                        -- 偵測 60 格內的玩家
+                        if dist < 60 then
                             local lookVec = player.Character.HumanoidRootPart.CFrame.LookVector
                             local toMe = (myPos - targetPos).Unit
                             local dot = lookVec:Dot(toMe)
                             
-                            if dot > 0.95 then -- 對方正盯著你
+                            -- 視線交會 (更嚴格的 0.97 判定)
+                            if dot > 0.97 then 
+                                currentObservers = currentObservers + 1
                                 if not env_global["Warning_"..player.Name] then
                                     env_global["Warning_"..player.Name] = true
-                                    Notify("舉報預警", "玩家 [" .. player.Name .. "] 可能正在觀察或舉報你！", "Warning")
-                                    task.delay(10, function() env_global["Warning_"..player.Name] = nil end)
+                                    Notify("危險警告", "玩家 [" .. player.Name .. "] 正緊盯著你，可能正在錄影或舉報！", "Warning")
+                                    task.delay(15, function() env_global["Warning_"..player.Name] = nil end)
                                 end
                             end
                         end
                     end
+                end
+                
+                -- 自動避險邏輯：如果同時有 3 個以上觀察者，且持續超過 10 秒
+                if currentObservers >= 3 then
+                    observerCount = observerCount + 1
+                    if observerCount >= 20 then -- 20 * 0.5s = 10s
+                        Notify("緊急避險", "檢測到大量觀察者，正在自動更換伺服器以保護帳號...", "Error")
+                        task.wait(1)
+                        if CatFunctions.ServerHop then
+                            CatFunctions.ServerHop()
+                        end
+                        break
+                    end
+                else
+                    observerCount = math.max(0, observerCount - 1)
                 end
             end
         end)
@@ -888,55 +1041,189 @@ function functionsModule.Init(env)
             while env_global.AutoWin and task.wait(0.5) do
                 local battlefield = CatFunctions.GetBattlefieldState()
                 local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
-                if not hrp then continue end
-
-                -- 1. 優先摧毀所有敵方床位 (Bedwars 核心勝利條件)
-                if #battlefield.beds > 0 then
-                    local targetBed = battlefield.beds[1]
-                    -- 檢查是否為自己的床 (簡單過濾：檢查顏色或名稱)
-                    local isMyBed = false
-                    if lplr.Team and targetBed.part.Parent.Name:lower():find(tostring(lplr.Team.Name):lower()) then
-                        isMyBed = true
-                    end
-                    
-                    if not isMyBed then
-                        Notify("Auto Win", "正在前往摧毀敵方床位: " .. targetBed.name, "Info")
+                if not hrp then
+                    task.wait()
+                else
+                    -- 1. 優先摧毀所有敵方床位 (Bedwars 核心勝利條件)
+                    if #battlefield.beds > 0 then
+                        local targetBed = battlefield.beds[1]
+                        -- 檢查是否為自己的床 (簡單過濾：檢查顏色或名稱)
+                        local isMyBed = false
+                        if lplr.Team and targetBed.part.Parent.Name:lower():find(tostring(lplr.Team.Name):lower()) then
+                            isMyBed = true
+                        end
                         
-                        -- 傳送到床位上方 (避免卡進方塊)
-                        hrp.CFrame = targetBed.part.CFrame * CFrame.new(0, 5, 0)
-                        task.wait(0.2)
-                        
-                        -- 觸發破壞遠程 (模擬多次打擊)
-                        local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
-                                       ReplicatedStorage:FindFirstChild("HitBlock", true)
-                        if remote then
-                            for i = 1, 5 do
-                                remote:FireServer({["position"] = targetBed.part.Position, ["block"] = targetBed.part.Name})
-                                task.wait(0.05)
+                        if not isMyBed then
+                            Notify("Auto Win", "正在前往摧毀敵方床位: " .. targetBed.name, "Info")
+                            
+                            -- 傳送到床位上方 (避免卡進方塊)
+                            hrp.CFrame = targetBed.part.CFrame * CFrame.new(0, 5, 0)
+                            task.wait(0.2)
+                            
+                            -- 觸發破壞遠程 (模擬多次打擊)
+                            local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
+                                           ReplicatedStorage:FindFirstChild("HitBlock", true)
+                            if remote then
+                                for i = 1, 5 do
+                                    remote:FireServer({["position"] = targetBed.part.Position, ["block"] = targetBed.part.Name})
+                                    task.wait(0.05)
+                                end
+                            end
+                            task.wait(0.5)
+                        else
+                            -- 如果是自己的床，嘗試下一個
+                            if #battlefield.beds > 1 then
+                                targetBed = battlefield.beds[2]
                             end
                         end
+                    -- 2. 床位全破後，清除剩餘敵人
+                    elseif #battlefield.targets > 0 then
+                        local targetPlayer = battlefield.targets[1]
+                        Notify("Auto Win", "正在清除剩餘玩家: " .. targetPlayer.player.Name, "Info")
+                        
+                        -- 傳送到玩家背後
+                        hrp.CFrame = targetPlayer.hrp.CFrame * CFrame.new(0, 0, 3)
                         task.wait(0.5)
                     else
-                        -- 如果是自己的床，嘗試下一個
-                        if #battlefield.beds > 1 then
-                            targetBed = battlefield.beds[2]
-                            -- 同樣的邏輯... (簡化起見這裡先跳過，通常第一順位不是自己就是敵人)
-                        end
+                        Notify("Auto Win", "戰場已清空，等待勝利判定...", "Success")
+                        task.wait(5)
                     end
-                -- 2. 床位全破後，清除剩餘敵人
-                elseif #battlefield.targets > 0 then
-                    local targetPlayer = battlefield.targets[1]
-                    Notify("Auto Win", "正在清除剩餘玩家: " .. targetPlayer.player.Name, "Info")
-                    
-                    -- 傳送到玩家背後
-                    hrp.CFrame = targetPlayer.hrp.CFrame * CFrame.new(0, 0, 3)
-                    task.wait(0.5)
-                else
-                    Notify("Auto Win", "戰場已清空，等待勝利判定...", "Success")
-                    task.wait(5)
                 end
             end
         end)
+    end
+
+    CatFunctions.ToggleFPSBoost = function(state)
+        env_global.FPSBoost = state
+        if not env_global.FPSBoost then
+            Notify("FPS Boost", "優化已關閉 (部分渲染更改需重啟腳本或更換伺服器生效)", "Info")
+            return
+        end
+
+        task.spawn(function()
+            Notify("FPS Boost", "正在執行全自動效能優化...", "Success")
+            
+            -- 1. 解鎖偵數限制
+            if setfpscap then
+                setfpscap(999)
+            end
+
+            -- 2. 優化全局渲染設置
+            local settings = game:GetService("Settings")
+            local rendering = settings.Rendering
+            pcall(function()
+                rendering.QualityLevel = Enum.QualityLevel.Level01
+            end)
+
+            -- 3. 優化光照與視覺效果
+            local lighting = game:GetService("Lighting")
+            lighting.GlobalShadows = false
+            lighting.FogEnd = 9e9
+            lighting.Brightness = 2
+            
+            for _, v in pairs(lighting:GetChildren()) do
+                if v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("DepthOfFieldEffect") or v:IsA("SunRaysEffect") then
+                    v.Enabled = false
+                end
+            end
+
+            -- 4. 遍歷工作區優化所有物件 (降低細節)
+            local function optimizePart(v)
+                if v:IsA("BasePart") then
+                    v.Material = Enum.Material.SmoothPlastic
+                    v.CastShadow = false
+                elseif v:IsA("Decal") or v:IsA("Texture") then
+                    v.Transparency = 1 -- 隱藏貼圖
+                elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                    v.Enabled = false
+                end
+            end
+
+            for _, v in pairs(workspace:GetDescendants()) do
+                optimizePart(v)
+            end
+
+            -- 監聽新生成的物件並優化
+            local connection
+            connection = workspace.DescendantAdded:Connect(function(v)
+                if not env_global.FPSBoost then
+                    connection:Disconnect()
+                    return
+                end
+                optimizePart(v)
+            end)
+
+            Notify("FPS Boost", "優化完成！偵數已解鎖至 999+", "Success")
+        end)
+    end
+
+    CatFunctions.ToggleAutoBuyWool = function(state)
+        env_global.AutoBuyWool = state
+        if not env_global.AutoBuyWool then return end
+        task.spawn(function()
+            while env_global.AutoBuyWool and task.wait(1) do
+                local remote = ReplicatedStorage:FindFirstChild("ShopPurchase", true) or 
+                               ReplicatedStorage:FindFirstChild("PurchaseItem", true)
+                if remote then
+                    -- 檢查物品欄是否有足夠羊毛，否則自動購買
+                    remote:FireServer({["item"] = "wool_white", ["amount"] = 16})
+                end
+            end
+        end)
+    end
+
+    -- 自動購買功能擴展
+    CatFunctions.ToggleAutoArmor = function(state)
+        env_global.AutoArmor = state
+        if not env_global.AutoArmor then return end
+        task.spawn(function()
+            local armors = {"leather_armor", "iron_armor", "diamond_armor", "emerald_armor"}
+            while env_global.AutoArmor and task.wait(2) do
+                local remote = ReplicatedStorage:FindFirstChild("ShopPurchase", true) or 
+                               ReplicatedStorage:FindFirstChild("PurchaseItem", true)
+                if remote then
+                    for _, armor in ipairs(armors) do
+                        remote:FireServer({["item"] = armor})
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoToxic = function(state)
+        env_global.AutoToxic = state
+        if not env_global.AutoToxic then return end
+        
+        local messages = {
+            "GG! Easy win with Halol!",
+            "Halol on top!",
+            "Get better, get Halol!",
+            "Imagine losing to Halol user.",
+            "Halol: The ultimate advantage."
+        }
+        
+        -- 監聽擊殺事件
+        local remote = ReplicatedStorage:FindFirstChild("EntityDeath", true) or 
+                       ReplicatedStorage:FindFirstChild("KillEvent", true)
+        
+        if remote and remote:IsA("RemoteEvent") then
+            local connection
+            connection = remote.OnClientEvent:Connect(function(data)
+                if not env_global.AutoToxic then
+                    connection:Disconnect()
+                    return
+                end
+                
+                -- 假設 data 包含擊殺者和被擊殺者
+                if data and data.killer == lplr then
+                    local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                    if chatRemote then
+                        local msg = messages[math.random(1, #messages)]
+                        chatRemote.SayMessageRequest:FireServer(msg, "All")
+                    end
+                end
+            end)
+        end
     end
 
     CatFunctions.GetBattlefieldState = function()
@@ -1029,6 +1316,42 @@ function functionsModule.Init(env)
         table.sort(state.targets, function(a, b) return a.dist < b.dist end)
         
         return state
+    end
+
+    CatFunctions.UnloadAll = function()
+        -- 1. 停止所有循環
+        for k, v in pairs(env_global) do
+            if typeof(v) == "boolean" then
+                env_global[k] = false
+            end
+        end
+        
+        -- 2. 重置特殊狀態
+        pcall(function()
+            -- 重置 WalkSpeed (如果被修改過)
+            if lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
+                lplr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+            end
+            
+            -- 重置碰撞箱
+            for _, v in pairs(Players:GetPlayers()) do
+                if v ~= lplr and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                    v.Character.HumanoidRootPart.Size = Vector3_new(2, 2, 1)
+                    v.Character.HumanoidRootPart.Transparency = 1
+                end
+            end
+            
+            -- 重置 FPS 限制
+            if setfpscap then
+                setfpscap(60)
+            end
+            
+            -- 恢復渲染設置 (部分)
+            local lighting = game:GetService("Lighting")
+            lighting.GlobalShadows = true
+        end)
+        
+        Notify("系統卸載", "所有功能已關閉並重置數據", "Info")
     end
 
     return CatFunctions

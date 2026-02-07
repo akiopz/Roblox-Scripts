@@ -109,7 +109,7 @@ function GuiUtils.Init(Gui)
         return Tabs[name]
     end
 
-    function GuiUtils.AddScript(tabName, name, desc, loadFunc, Notify)
+    function GuiUtils.AddScript(tabName, name, desc, loadFunc, Notify, defaultState)
         local targetTab = Tabs[tabName]
         if not targetTab then return end
         
@@ -165,8 +165,29 @@ function GuiUtils.Init(Gui)
             Active = false -- 不攔截父按鈕點擊
         })
 
-        local active = false
+        local active = defaultState or false
         local isProcessing = false
+
+        local function UpdateVisuals()
+            local targetColor = active and Color3_fromRGB(30, 40, 80) or Color3_fromRGB(20, 20, 35)
+            local targetStroke = active and Color3_fromRGB(0, 150, 255) or Color3_fromRGB(50, 50, 80)
+            
+            Button.BackgroundColor3 = targetColor
+            BStroke.Color = targetStroke
+            
+            if active then
+                StatusLight.BackgroundColor3 = Color3_fromRGB(0, 255, 255)
+                DescLabel.TextColor3 = Color3_fromRGB(150, 150, 200)
+            else
+                StatusLight.BackgroundColor3 = Color3_fromRGB(60, 60, 80)
+                DescLabel.TextColor3 = Color3_fromRGB(100, 100, 130)
+            end
+        end
+
+        if defaultState then
+            UpdateVisuals()
+        end
+
         Gui.SafeConnect(Button.MouseButton1Click, function()
             if isProcessing then return end
             isProcessing = true
@@ -176,21 +197,7 @@ function GuiUtils.Init(Gui)
             
             if success then
                 -- 按鈕反饋動畫
-                task.spawn(function()
-                    local targetColor = active and Color3_fromRGB(30, 40, 80) or Color3_fromRGB(20, 20, 35)
-                    local targetStroke = active and Color3_fromRGB(0, 150, 255) or Color3_fromRGB(50, 50, 80)
-                    
-                    Button.BackgroundColor3 = targetColor
-                    BStroke.Color = targetStroke
-                    
-                    if active then
-                        StatusLight.BackgroundColor3 = Color3_fromRGB(0, 255, 255)
-                        DescLabel.TextColor3 = Color3_fromRGB(150, 150, 200)
-                    else
-                        StatusLight.BackgroundColor3 = Color3_fromRGB(60, 60, 80)
-                        DescLabel.TextColor3 = Color3_fromRGB(100, 100, 130)
-                    end
-                end)
+                task.spawn(UpdateVisuals)
             else
                 active = not active
                 if Notify then Notify("系統錯誤", tostring(err), "Error") end

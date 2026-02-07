@@ -66,6 +66,7 @@ function GuiModule.CreateMainGui()
     local TabList = Instance.new("UIListLayout")
     local ContentContainer = Instance.new("Frame")
     local CloseButton = Instance.new("TextButton")
+    local ToggleButton = Instance.new("TextButton")
     
     -- 科幻裝飾元素
     local BgPattern = Instance.new("ImageLabel")
@@ -81,6 +82,92 @@ function GuiModule.CreateMainGui()
         DisplayOrder = 9999
     })
 
+    -- 收起/展開切換按鈕 (浮窗)
+    ApplyProperties(ToggleButton, {
+        Name = "ToggleButton",
+        Parent = ScreenGui,
+        BackgroundColor3 = Color3_fromRGB(10, 10, 20),
+        Position = UDim2_new(0, 20, 0.5, -20), -- 預設靠左中間
+        Size = UDim2_new(0, 50, 0, 50),
+        Font = Enum.Font.GothamBold,
+        Text = "", -- 改用圖標或保持空白
+        ZIndex = 100,
+        Visible = true
+    })
+
+    local LogoImage = Instance.new("ImageLabel")
+    ApplyProperties(LogoImage, {
+        Name = "LogoImage",
+        Parent = ToggleButton,
+        BackgroundTransparency = 1,
+        Position = UDim2_new(0.15, 0, 0.15, 0),
+        Size = UDim2_new(0.7, 0, 0.7, 0),
+        Image = "rbxassetid://7072724424", -- 科技感電路圖標
+        ImageColor3 = Color3_fromRGB(0, 255, 255),
+        ZIndex = 101
+    })
+
+    -- 科幻裝飾圈
+    local OrbitFrame = Instance.new("Frame")
+    ApplyProperties(OrbitFrame, {
+        Name = "OrbitFrame",
+        Parent = ToggleButton,
+        BackgroundTransparency = 1,
+        Position = UDim2_new(0.5, 0, 0.5, 0),
+        Size = UDim2_new(0, 0, 0, 0),
+        ZIndex = 99
+    })
+
+    local OrbitImage = Instance.new("ImageLabel")
+    ApplyProperties(OrbitImage, {
+        Name = "OrbitImage",
+        Parent = OrbitFrame,
+        BackgroundTransparency = 1,
+        Position = UDim2_new(0, -35, 0, -35),
+        Size = UDim2_new(0, 70, 0, 70),
+        Image = "rbxassetid://6031094630", -- 圓形旋轉裝飾
+        ImageColor3 = Color3_fromRGB(0, 150, 255),
+        ImageTransparency = 0.5,
+        ZIndex = 98
+    })
+
+    -- 旋轉動畫
+    task_spawn(function()
+        while ScreenGui and ScreenGui.Parent do
+            if ToggleButton.Visible then
+                OrbitImage.Rotation = OrbitImage.Rotation + 2
+            end
+            task.wait(0.01)
+        end
+    end)
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 12) -- 圓角矩形更具科技感
+    ToggleCorner.Parent = ToggleButton
+    
+    local ToggleStroke = Instance.new("UIStroke")
+    ApplyProperties(ToggleStroke, {
+        Color = Color3_fromRGB(0, 150, 255),
+        Thickness = 2,
+        Parent = ToggleButton
+    })
+
+    -- 呼吸效果動畫
+    task_spawn(function()
+        while ScreenGui and ScreenGui.Parent do
+            if ToggleButton.Visible then
+                for i = 0, 1, 0.05 do
+                    if not ToggleButton.Visible then break end
+                    local transparency = 0.4 + (math.sin(tick() * 2) * 0.2)
+                    ToggleStroke.Transparency = transparency
+                    LogoImage.ImageTransparency = transparency - 0.2
+                    task.wait(0.05)
+                end
+            end
+            task.wait(0.1)
+        end
+    end)
+
     ApplyProperties(MainFrame, {
         Name = RandomString(math.random(10, 20)),
         Parent = ScreenGui,
@@ -92,6 +179,23 @@ function GuiModule.CreateMainGui()
         Selectable = true,
         ZIndex = 5
     })
+
+    -- 切換功能實作
+    local function ToggleGui()
+        MainFrame.Visible = not MainFrame.Visible
+        ToggleButton.Visible = not MainFrame.Visible
+    end
+
+    -- 綁定快捷鍵切換 (預設為 RightShift)
+    SafeConnect(UserInputService.InputBegan, function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            ToggleGui()
+        end
+    end)
+
+    -- 點擊切換按鈕展開
+    SafeConnect(ToggleButton.MouseButton1Click, ToggleGui)
 
     -- 手動實現拖動功能 (替代已過時的 Draggable)
     local dragging, dragInput, dragStart, startPos
@@ -124,6 +228,25 @@ function GuiModule.CreateMainGui()
     SafeConnect(UserInputService.InputChanged, function(input)
         if input == dragInput and dragging then
             update(input)
+        end
+    end)
+
+    -- 切換按鈕拖動功能
+    local t_dragging, t_dragInput, t_dragStart, t_startPos
+    SafeConnect(ToggleButton.InputBegan, function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+            t_dragging = true
+            t_dragStart = input.Position
+            t_startPos = ToggleButton.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then t_dragging = false end
+            end)
+        end
+    end)
+    SafeConnect(UserInputService.InputChanged, function(input)
+        if t_dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - t_dragStart
+            ToggleButton.Position = UDim2_new(t_startPos.X.Scale, t_startPos.X.Offset + delta.X, t_startPos.Y.Scale, t_startPos.Y.Offset + delta.Y)
         end
     end)
 
@@ -261,20 +384,44 @@ function GuiModule.CreateMainGui()
         ZIndex = 11 -- 確保在最上層
     })
 
+    -- 收起按鈕 (在關閉按鈕旁邊)
+    local HideButton = Instance.new("TextButton")
+    ApplyProperties(HideButton, {
+        Name = "HideButton",
+        Parent = MainFrame,
+        BackgroundTransparency = 1,
+        Position = UDim2_new(0.88, 0, 0, 8),
+        Size = UDim2_new(0, 30, 0, 30),
+        Font = Enum.Font.GothamBold,
+        Text = "-",
+        TextColor3 = Color3_fromRGB(200, 200, 200),
+        TextSize = 24,
+        ZIndex = 11
+    })
+    
+    SafeConnect(HideButton.MouseButton1Click, ToggleGui)
+
     -- 綁定關閉事件
     SafeConnect(CloseButton.MouseButton1Click, function()
+        -- 執行清理回調 (如果存在)
+        -- 注意：HalolUnload 會處理功能關閉，我們這裡處理 GUI 銷毀動畫
+        if getgenv().HalolUnload then
+            getgenv().HalolUnload(true) -- 傳入 true 表示是由 GUI 觸發，延後銷毀 GUI
+        end
+        
         -- 加入淡出動畫後銷毀
         task.spawn(function()
             for i = 0, 1, 0.1 do
+                if not MainFrame or not ScreenGui or not ScreenGui.Parent then break end
                 MainFrame.BackgroundTransparency = 0.05 + (i * 0.95)
                 for _, child in pairs(MainFrame:GetDescendants()) do
                     if child:IsA("GuiObject") then
-                        child.Transparency = child.Transparency + (i * (1 - child.Transparency))
+                        pcall(function() child.Transparency = child.Transparency + (i * (1 - child.Transparency)) end)
                     end
                 end
                 task.wait(0.01)
             end
-            ScreenGui:Destroy()
+            if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
         end)
     end)
 
@@ -284,6 +431,13 @@ function GuiModule.CreateMainGui()
     end)
     SafeConnect(CloseButton.MouseLeave, function()
         CloseButton.TextColor3 = Color3_fromRGB(255, 50, 50)
+    end)
+    
+    SafeConnect(HideButton.MouseEnter, function()
+        HideButton.TextColor3 = Color3_fromRGB(255, 255, 255)
+    end)
+    SafeConnect(HideButton.MouseLeave, function()
+        HideButton.TextColor3 = Color3_fromRGB(200, 200, 200)
     end)
 
     task_spawn(function()
@@ -332,13 +486,16 @@ function GuiModule.CreateMainGui()
             UIGradient.Color = sequence
             StrokeGradient.Color = sequence
             GlowEffect.ImageColor3 = color1
+            ToggleStroke.Color = color1
             
             -- 文字與霓虹效果同步
             Title.TextColor3 = color1
             SubTitle.TextColor3 = color2
+            LogoImage.ImageColor3 = color1
+            ToggleButton.TextColor3 = color1
             
-            if not MainFrame.Visible then
-                while not MainFrame.Visible and ScreenGui and ScreenGui.Parent do
+            if not MainFrame.Visible and not ToggleButton.Visible then
+                while not MainFrame.Visible and not ToggleButton.Visible and ScreenGui and ScreenGui.Parent do
                     task.wait(0.5)
                 end
             end
@@ -350,6 +507,7 @@ function GuiModule.CreateMainGui()
     return {
         ScreenGui = ScreenGui,
         MainFrame = MainFrame,
+        ToggleButton = ToggleButton,
         TabContainer = TabContainer,
         ContentContainer = ContentContainer,
         CloseButton = CloseButton,

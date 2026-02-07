@@ -14,10 +14,14 @@ env_global.ProjectileAura = env_global.ProjectileAura or false
 env_global.VelocityHorizontal = env_global.VelocityHorizontal or 15
 env_global.VelocityVertical = env_global.VelocityVertical or 100
 
-print("Halol V4.8.5 開始加載 (優化移動與防死)...")
+print("Halol V4.8.7 開始加載 (優化效能與新增自動化)...")
 
 -- 增加一個隨機數來徹底繞過快取
 local sessionID = tostring(math.random(100000, 999999))
+
+env_global.FPSBoost = env_global.FPSBoost or false
+env_global.AutoBuyWool = env_global.AutoBuyWool or false
+env_global.AutoArmor = env_global.AutoArmor or false
 
 env_global.AI_Enabled = env_global.AI_Enabled or false
 env_global.GodModeAI = env_global.GodModeAI or false
@@ -28,15 +32,19 @@ env_global.KillAuraMaxTargets = env_global.KillAuraMaxTargets or 1
 
 local function Notify(title, text, duration)
     pcall(function()
+        local d = 5
+        if type(duration) == "number" then
+            d = duration
+        end
         game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = duration or 5
+            Title = tostring(title),
+            Text = tostring(text),
+            Duration = d
         })
     end)
 end
 
-Notify("Halol V4.8.5", "正在從雲端獲獲取最新組件 (強制刷新)...", 3)
+Notify("Halol V4.8.7", "正在從雲端獲獲取最新組件 (強制刷新)...", 3)
 
 local success, err = pcall(function()
     local HOSTS = {
@@ -75,6 +83,7 @@ local success, err = pcall(function()
 
 
     local env = GetScript("src/core/env.lua")
+    env.Notify = Notify
     
     local guiModule = GetScript("src/core/gui.lua")
     local mainGui = guiModule.CreateMainGui()
@@ -83,18 +92,58 @@ local success, err = pcall(function()
     local utilsModule = GetScript("src/core/utils.lua")
     local GuiUtils = utilsModule.Init(mainGui)
 
-    Notify("Halol V4.8.5", "核心組件已就緒，載入介面中...", 3)
+    Notify("Halol V4.8.6", "核心組件已就緒，載入介面中...", 3)
     
     local functionsModule = GetScript("src/modules/functions.lua")
     local CatFunctions = functionsModule.Init(env)
+    
+    -- 啟動時自動開啟抗舉報模式 (用戶要求)
+    if CatFunctions.ToggleAntiReport then
+        CatFunctions.ToggleAntiReport(true)
+        Notify("Halol 系統", "抗舉報模式已自動啟動", 3)
+    end
+    
+    -- 優先載入設定
+    if CatFunctions.LoadConfig then
+        CatFunctions.LoadConfig()
+    end
+
     local blatantModule = GetScript("src/modules/blatant.lua")
-    local Blatant = blatantModule.Init(mainGui, function(...) Notify("Halol V4.8.5", ...) end, CatFunctions)
+    local Blatant = blatantModule.Init(mainGui, function(...) Notify("Halol V4.8.6", ...) end, CatFunctions)
 
     local aiModule = GetScript("src/modules/ai.lua")
     local AI = aiModule.Init(CatFunctions, Blatant)
 
     local visualsModule = GetScript("src/modules/visuals.lua")
-    local Visuals = visualsModule.Init(mainGui, function(...) Notify("Halol V4.8.5", ...) end)
+    local Visuals = visualsModule.Init(mainGui, function(...) Notify("Halol V4.8.7", ...) end)
+
+    -- 註冊全域卸載回調
+    getgenv().HalolUnload = function(keepGui)
+        pcall(function() 
+            -- 1. 停止 AI
+            if AI and AI.Stop then AI.Stop() end
+            
+            -- 2. 停止視覺功能 (重置全域標籤)
+            env_global.FullESPEnabled = false
+            env_global.TracersEnabled = false
+            env_global.RadarEnabled = false
+            env_global.ChestESPEnabled = false
+            env_global.ShopESPEnabled = false
+            env_global.FullbrightEnabled = false
+            
+            -- 3. 執行核心功能卸載 (含重置 WalkSpeed, 碰撞箱等)
+            if CatFunctions and CatFunctions.UnloadAll then 
+                CatFunctions.UnloadAll() 
+            end
+            
+            -- 4. 銷毀 GUI (除非是從 GUI 觸發的淡出銷毀)
+            if not keepGui and mainGui and mainGui.ScreenGui then
+                mainGui.ScreenGui:Destroy()
+            end
+        end)
+        getgenv().HalolUnload = nil
+        Notify("Halol 系統", "腳本已完全卸載並關閉所有功能", 5)
+    end
 
     local firstTab = GuiUtils.CreateTab("自動核心")
     GuiUtils.AddScript("自動核心", "不死模式 (Anti Dead)", "低血量自動升空避難並持續攻擊", function(s) CatFunctions.ToggleAntiDead(s) end, Notify)
@@ -125,23 +174,28 @@ local success, err = pcall(function()
     GuiUtils.AddScript("運動輔助", "防虛空 (AntiVoid)", "掉入虛空時自動彈回", function(s) CatFunctions.ToggleAntiVoid(s) end, Notify)
 
     local serverTab = GuiUtils.CreateTab("伺服器強化")
+    GuiUtils.AddScript("伺服器強化", "自動購買羊毛", "資源足夠時自動補充建築方塊", function(s) CatFunctions.ToggleAutoBuyWool(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "自動購買套裝", "自動升級並購買最強可用護甲", function(s) CatFunctions.ToggleAutoArmor(s) end, Notify)
     GuiUtils.AddScript("伺服器強化", "自動升級團隊", "自動購買團隊傷害、盔甲等強化", function(s) CatFunctions.ToggleAutoBuyUpgrades(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "自動嘲諷 (Auto Toxic)", "擊殺敵人後自動在公頻發送嘲諷訊息", function(s) CatFunctions.ToggleAutoToxic(s) end, Notify)
     GuiUtils.AddScript("伺服器強化", "遠程商店", "隨時隨地開啟商店數據交互", function(s) CatFunctions.ToggleInstantShop(s) end, Notify)
     GuiUtils.AddScript("伺服器強化", "自動領取獎勵", "自動領取每日、任務與通行證獎勵", function(s) CatFunctions.ToggleAutoClaimRewards(s) end, Notify)
-    GuiUtils.AddScript("伺服器強化", "抗舉報模式", "模擬攔截傳出的玩家舉報封包", function(s) CatFunctions.ToggleAntiReport(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "抗舉報模式", "模擬攔截傳出的玩家舉報封包", function(s) CatFunctions.ToggleAntiReport(s) end, Notify, true)
     GuiUtils.AddScript("伺服器強化", "自定義房間漏洞", "嘗試在自定義房間中獲取更高權限", function(s) CatFunctions.ToggleCustomMatchExploit(s) end, Notify)
     GuiUtils.AddScript("伺服器強化", "伺服器切換", "快速跳轉至其他公共伺服器", function() CatFunctions.ServerHop() end, Notify)
     GuiUtils.AddScript("伺服器強化", "快速重連", "立即重新連接當前伺服器", function() CatFunctions.Rejoin() end, Notify)
 
     local worldTab = GuiUtils.CreateTab("世界與雜項")
     GuiUtils.AddScript("世界與雜項", "自動拆床 (BedNuker)", "自動破壞範圍內的床 (25格)", function(s) CatFunctions.ToggleBedNuker(s) end, Notify)
+    GuiUtils.AddScript("世界與雜項", "效能極致優化 (FPS 999+)", "降低畫質並解除幀率限制以獲取最高 FPS", function(s) CatFunctions.ToggleFPSBoost(s) end, Notify)
     GuiUtils.AddScript("世界與雜項", "範圍破壞 (Nuker)", "自動破壞周圍所有可破壞方塊", function(s) CatFunctions.ToggleNuker(s) end, Notify)
     GuiUtils.AddScript("世界與雜項", "時間循環 (Cycle)", "使世界時間不斷流轉", function(s) CatFunctions.ToggleTimeCycle(s) end, Notify)
     GuiUtils.AddScript("世界與雜項", "移除霧氣 (NoFog)", "使地圖視線更加清晰", function(s) CatFunctions.ToggleNoFog(s) end, Notify)
     GuiUtils.AddScript("世界與雜項", "解鎖幀率 (FPS)", "解除 60 幀限制 (需執行器支持)", function(s) CatFunctions.ToggleFPSCap(s) end, Notify)
     GuiUtils.AddScript("世界與雜項", "防掛機 (AntiAFK)", "防止因長時間不操作被踢出", function(s) CatFunctions.ToggleAntiAFK(s) end, Notify)
-    GuiUtils.AddScript("世界與雜項", "自動重連 (AutoRejoin)", "斷線後自動重新進入遊戲", function(s) CatFunctions.ToggleAutoRejoin(s) end, Notify)
-    GuiUtils.AddScript("世界與雜項", "聊天廣播 (Spam)", "自動在公頻發送推廣訊息", function(s) CatFunctions.ToggleChatSpam(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "自動重連 (AutoRejoin)", "斷線後自動重新進入遊戲", function(s) CatFunctions.ToggleAutoRejoin(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "自動返回大廳", "遊戲結束後自動回到主大廳", function(s) CatFunctions.ToggleAutoLobby(s) end, Notify)
+    GuiUtils.AddScript("伺服器強化", "聊天廣播 (Spam)", "自動在公頻發送推廣訊息", function(s) CatFunctions.ToggleChatSpam(s) end, Notify)
 
     local visualTab = GuiUtils.CreateTab("視覺顯示")
     GuiUtils.AddScript("視覺顯示", "玩家透視 (ESP)", "穿牆顯示玩家位置與資訊", function(s) Visuals.ToggleESP(s) end, Notify)
@@ -149,7 +203,11 @@ local success, err = pcall(function()
     GuiUtils.AddScript("視覺顯示", "血量顯示", "在玩家頭頂顯示即時血量", function(s) Visuals.ToggleHealthDisplay(s) end, Notify)
     GuiUtils.AddScript("視覺顯示", "傷害指示器", "顯示造成的傷害數值動畫", function(s) CatFunctions.ToggleDamageIndicator(s) end, Notify)
 
-    Notify("Halol V4.8.5", "腳本已成功加載！", 5)
+    local configTab = GuiUtils.CreateTab("配置管理")
+    GuiUtils.AddScript("配置管理", "立即保存配置", "將當前所有設定保存至您的帳號", function() CatFunctions.SaveConfig() end, Notify)
+    GuiUtils.AddScript("配置管理", "手動讀取配置", "從本地文件重新載入您的設定", function() CatFunctions.LoadConfig() end, Notify)
+
+    Notify("Halol V4.8.7", "腳本已成功加載！\nRightShift 或點擊按鈕切換 GUI", 5)
 end)
 
 if not success then
