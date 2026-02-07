@@ -424,20 +424,23 @@ function functionsModule.Init(env)
 
     CatFunctions.ToggleHitboxExpander = function(state)
         env_global.HitboxExpander = state
+        if not env_global.HitboxExpander then 
+            -- 重置所有玩家碰撞箱
+            for _, v in pairs(Players:GetPlayers()) do
+                if v ~= lplr and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                    v.Character.HumanoidRootPart.Size = Vector3_new(2, 2, 1)
+                    v.Character.HumanoidRootPart.Transparency = 1
+                end
+            end
+            return 
+        end
         task.spawn(function()
             while env_global.HitboxExpander and task.wait(1) do
                 for _, v in pairs(Players:GetPlayers()) do
-                    if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                    if v ~= lplr and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
                         v.Character.HumanoidRootPart.Size = Vector3_new(10, 10, 10)
                         v.Character.HumanoidRootPart.Transparency = 0.7
-                    end
-                end
-            end
-            if not env_global.HitboxExpander then
-                for _, v in pairs(Players:GetPlayers()) do
-                    if v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                        v.Character.HumanoidRootPart.Size = Vector3_new(2, 2, 1)
-                        v.Character.HumanoidRootPart.Transparency = 1
+                        v.Character.HumanoidRootPart.CanCollide = false
                     end
                 end
             end
@@ -487,19 +490,74 @@ function functionsModule.Init(env)
         end)
     end
 
+    -- 世界與雜項功能擴展
+    CatFunctions.ToggleTimeCycle = function(state)
+        env_global.TimeCycle = state
+        if not env_global.TimeCycle then return end
+        task.spawn(function()
+            while env_global.TimeCycle and task.wait() do
+                game:GetService("Lighting").ClockTime = (tick() % 24)
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAntiAFK = function(state)
+        env_global.AntiAFK = state
+        if not env_global.AntiAFK then return end
+        local virtualUser = game:GetService("VirtualUser")
+        lplr.Idled:Connect(function()
+            if env_global.AntiAFK then
+                virtualUser:CaptureController()
+                virtualUser:ClickButton2(Vector2.new())
+            end
+        end)
+    end
+
+    CatFunctions.ToggleNoFog = function(state)
+        env_global.NoFog = state
+        local Lighting = game:GetService("Lighting")
+        if state then
+            Lighting.FogEnd = 100000
+            for _, v in pairs(Lighting:GetChildren()) do
+                if v:IsA("Atmosphere") then v.Density = 0 end
+            end
+        else
+            Lighting.FogEnd = 1000 -- 恢復預設值
+        end
+    end
+
+    CatFunctions.ToggleFPSCap = function(state)
+        if setfpscap then
+            setfpscap(state and 999 or 60)
+        end
+    end
+
+    CatFunctions.ToggleAutoRejoin = function(state)
+        env_global.AutoRejoin = state
+        local CoreGui = game:GetService("CoreGui")
+        local rejoinConn
+        rejoinConn = CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+            if env_global.AutoRejoin and child.Name == "ErrorPrompt" then
+                game:GetService("TeleportService"):Teleport(game.PlaceId)
+            end
+        end)
+    end
+
     CatFunctions.ToggleChatSpam = function(state)
         env_global.ChatSpam = state
         if not env_global.ChatSpam then return end
+        local messages = {
+            "Halol Script V4.4 | 最好用的自動化腳本",
+            "還在手動玩？試試 Halol 自動掛機吧！",
+            "AKIOPZ 優質作品，值得信賴。"
+        }
         task.spawn(function()
-            local messages = {"HALOL V4.0 ON TOP!", "GET GOOD GET HALOL", "HALOL BEST FREE SCRIPT"}
-            while env_global.ChatSpam and task.wait(3) do
+            while env_global.ChatSpam and task.wait(5) do
                 local msg = messages[math.random(1, #messages)]
-                local sayMsg = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and 
-                               ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
-                if sayMsg then
-                    sayMsg:FireServer(msg, "All")
-                elseif game:GetService("TextChatService"):FindFirstChild("TextChannels") then
-                    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
+                local sayMessage = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and 
+                                  ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
+                if sayMessage then
+                    sayMessage:FireServer(msg, "All")
                 end
             end
         end)

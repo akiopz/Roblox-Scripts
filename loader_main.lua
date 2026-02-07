@@ -14,7 +14,7 @@ env_global.ProjectileAura = env_global.ProjectileAura or false
 env_global.VelocityHorizontal = env_global.VelocityHorizontal or 15
 env_global.VelocityVertical = env_global.VelocityVertical or 100
 
-print("Halol V4.4 開始加載 (交互修復版本)...")
+print("Halol V4.5 開始加載 (功能擴展版本)...")
 
 -- 增加一個隨機數來徹底繞過快取
 local sessionID = tostring(math.random(100000, 999999))
@@ -36,7 +36,7 @@ local function Notify(title, text, duration)
     end)
 end
 
-Notify("Halol V4.4", "正在從雲端獲取最新組件...", 3)
+Notify("Halol V4.5", "正在從雲端獲取最新組件...", 3)
 
 local success, err = pcall(function()
     local HOSTS = {
