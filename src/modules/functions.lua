@@ -372,23 +372,35 @@ function functionsModule.Init(env)
             workspace:FindFirstChild("Generators"),
             workspace:FindFirstChild("Beds"),
             workspace:FindFirstChild("Items"),
-            workspace:FindFirstChild("Pickups")
+            workspace:FindFirstChild("Pickups"),
+            workspace:FindFirstChild("Map"),
+            workspace:FindFirstChild("Blocks")
         }
+
+        local function checkPart(v)
+            local name = v.Name:lower()
+            if name:find("diamond") or name:find("emerald") or name:find("iron") then
+                local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                if p then
+                    table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
+                end
+            end
+            if name:find("bed") then
+                local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                if p then
+                    table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                end
+            end
+        end
 
         for _, folder in ipairs(searchFolders) do
             if folder then
-                for _, v in pairs(folder:GetDescendants()) do
-                    local name = v.Name:lower()
-                    if name:find("diamond") or name:find("emerald") or name:find("iron") then
-                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
-                        if p then
-                            table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
-                        end
-                    end
-                    if name:find("bed") then
-                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
-                        if p then
-                            table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                for _, v in pairs(folder:GetChildren()) do
+                    checkPart(v)
+                    -- 一層子目錄檢查
+                    if v:IsA("Model") or v:IsA("Folder") then
+                        for _, sub in pairs(v:GetChildren()) do
+                            checkPart(sub)
                         end
                     end
                 end

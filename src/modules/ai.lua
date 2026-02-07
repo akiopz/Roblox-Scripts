@@ -47,11 +47,16 @@ function AIModule.Init(CatFunctions, Blatant)
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum and hum.Health > 0 then
+                        if hum.WalkSpeed < 20 then hum.WalkSpeed = 20 end
+                        hum.AutoRotate = true
+                        
                         -- Stuck Detection
                         if (hrp.Position - lastPos).Magnitude < 0.5 then
                             if tick() - lastMoveTime > 2 then
                                 hum.Jump = true
-                                hum:Move(Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)), true)
+                                local randomDir = Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)).Unit
+                                hrp.Velocity = hrp.Velocity + (randomDir * 10)
+                                hum:Move(randomDir, true)
                                 lastMoveTime = tick()
                             end
                         else
@@ -61,6 +66,9 @@ function AIModule.Init(CatFunctions, Blatant)
 
                         local battlefield = CatFunctions.GetBattlefieldState()
                         local target = nil
+                        
+                        -- DEBUG
+                        -- print("AI Battlefield state: targets=" .. #battlefield.targets .. " resources=" .. #battlefield.resources .. " beds=" .. #battlefield.beds)
                         local minDist = math.huge
                         
                         if battlefield.isBeingTargeted then
@@ -82,6 +90,9 @@ function AIModule.Init(CatFunctions, Blatant)
                             if not target and battlefield.nearestThreat then
                                 target = {part = battlefield.nearestThreat.hrp, type = "PLAYER"}
                             end
+                            if not target and #battlefield.resources > 0 then
+                                target = {part = battlefield.resources[1].part, type = "RESOURCE"}
+                            end
                         end
                         
                         if target then
@@ -90,8 +101,24 @@ function AIModule.Init(CatFunctions, Blatant)
                             
                             if dist > 4 then
                                 local moveDir = (targetPos - hrp.Position).Unit
+                                moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
+                                
+                                if dist > 15 then
+                                    local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
+                                    local success = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
+                                    if success and path.Status == Enum.PathStatus.Success then
+                                        local waypoints = path:GetWaypoints()
+                                        if #waypoints > 1 then
+                                            moveDir = (waypoints[2].Position - hrp.Position).Unit
+                                            moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
+                                            if waypoints[2].Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                                        end
+                                    end
+                                end
+
                                 if hum then
                                     hum:Move(moveDir, true)
+                                    hum:MoveTo(hrp.Position + moveDir * 5)
                                 end
                                 
                                 local ray = Ray.new(hrp.Position, moveDir * 3)
@@ -104,7 +131,7 @@ function AIModule.Init(CatFunctions, Blatant)
                             end
 
                             if target.type == "PLAYER" and _G.KillAura then
-                                hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(targetPos.X, hrp.Position.Y, targetPos.Z))
+                                hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(target.part.Position.X, hrp.Position.Y, target.part.Position.Z))
                                 _G.KillAuraTarget = target.part.Parent
                             end
                         else
@@ -139,11 +166,16 @@ function AIModule.Init(CatFunctions, Blatant)
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum and hum.Health > 0 then
+                        if hum.WalkSpeed < 20 then hum.WalkSpeed = 20 end
+                        hum.AutoRotate = true
+
                         -- Stuck Detection
                         if (hrp.Position - lastPos).Magnitude < 0.5 then
                             if tick() - lastMoveTime > 2 then
                                 hum.Jump = true
-                                hum:Move(Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)), true)
+                                local randomDir = Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)).Unit
+                                hrp.Velocity = hrp.Velocity + (randomDir * 10)
+                                hum:Move(randomDir, true)
                                 lastMoveTime = tick()
                             end
                         else
@@ -164,9 +196,8 @@ function AIModule.Init(CatFunctions, Blatant)
 
                         if nearResource then
                              target = {part = nearResource.part, type = "RESOURCE"}
-                             if nearResource.dist < 5 then
+                             if nearResource.dist < 3 then
                                  hum:Move(Vector3_new(0,0,0), true)
-                                 task_wait(0.5)
                              end
                         elseif battlefield.nearestThreat and battlefield.nearestThreat.dist < 60 then
                             target = {part = battlefield.nearestThreat.hrp, type = "PLAYER"}
@@ -191,7 +222,7 @@ function AIModule.Init(CatFunctions, Blatant)
                         end
 
                         if target then
-                            local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 3, AgentCanJump = true})
+                            local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
                             local success, errorMessage = pcall(function()
                                 path:ComputeAsync(hrp.Position, target.part.Position)
                             end)
@@ -201,7 +232,9 @@ function AIModule.Init(CatFunctions, Blatant)
                                 if #waypoints > 1 then
                                     local nextWaypoint = waypoints[2]
                                     local moveDir = (nextWaypoint.Position - hrp.Position).Unit
+                                    moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit -- Flatten movement
                                     hum:Move(moveDir, true)
+                                    hum:MoveTo(nextWaypoint.Position)
                                     
                                     if nextWaypoint.Action == Enum.PathWaypointAction.Jump then
                                         hum.Jump = true
@@ -214,7 +247,9 @@ function AIModule.Init(CatFunctions, Blatant)
                                 end
                             else
                                 local moveDir = (target.part.Position - hrp.Position).Unit
+                                moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit -- Flatten movement
                                 hum:Move(moveDir, true)
+                                hum:MoveTo(target.part.Position)
                             end
 
                             if hrp.Position.Y < 0 then
