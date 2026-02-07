@@ -115,9 +115,46 @@ task.spawn(function()
                 combatActions.ToggleLagSwitch(state)
             end, Notify, false)
 
-            Utils.AddScript("射擊類", "安全：刪除反外掛 (AC Nuker)", "掃描並嘗試刪除遊戲內的反外掛腳本", function(state)
-                combatActions.ToggleServerACNuker(state)
-            end, Notify, false)
+            Utils.AddScript("射擊類", "暴力：刪除反外掛 (AC Nuker)", "掃描並嘗試刪除遊戲內的反外掛腳本", function(state)
+        combatActions.ToggleServerACNuker(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "暴力：碰撞箱擴大", "擴大敵人碰撞箱以便更容易擊中", function(state)
+        combatActions.ToggleHitboxExpander(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "暴力：穿牆移動 (NoClip)", "無視地圖碰撞，自由穿梭牆壁", function(state)
+        combatActions.ToggleNoClip(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "暴力：無限跳躍", "允許在空中連續跳躍", function(state)
+        combatActions.ToggleInfJump(state)
+    end, Notify, false)
+
+    -- 武器與玩家增強
+    Utils.AddScript("射擊類", "武器：無限彈藥", "嘗試鎖定彈藥不減少", function(state)
+        combatActions.ToggleInfAmmo(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "武器：快速射擊 (Rapid Fire)", "大幅提升射擊速度", function(state)
+        combatActions.ToggleRapidFire(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "環境：全亮模式", "移除地圖陰影，提亮視野", function(state)
+        combatActions.ToggleFullBright(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "環境：移除霧氣", "讓視野變清晰，不受霧氣干擾", function(state)
+        combatActions.ToggleNoFog(state)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "玩家：2倍速移動", "將移動速度設置為 2 倍", function(state)
+        combatActions.SetWalkSpeedMult(state and 2 or 1)
+    end, Notify, false)
+
+    Utils.AddScript("射擊類", "玩家：超強跳躍", "大幅提升跳躍高度", function(state)
+        combatActions.SetJumpPowerMult(state and 2 or 1)
+    end, Notify, false)
             
             Utils.AddScript("射擊類", "魔法子彈 (Magic Bullet)", "子彈自動導向敵人 (需執行器支持)", function(state)
                 combatActions.ToggleMagicBullet(state)

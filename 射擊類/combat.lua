@@ -66,6 +66,21 @@ env_global.AutoWinEnabled = env_global.AutoWinEnabled or false
 env_global.LagSwitchEnabled = env_global.LagSwitchEnabled or false
 env_global.ServerACNukerEnabled = env_global.ServerACNukerEnabled or false
 
+env_global.HitboxExpanderEnabled = env_global.HitboxExpanderEnabled or false
+env_global.HitboxSize = env_global.HitboxSize or 5
+env_global.HitboxTransparency = env_global.HitboxTransparency or 0.5
+
+env_global.NoClipEnabled = env_global.NoClipEnabled or false
+env_global.InfJumpEnabled = env_global.InfJumpEnabled or false
+
+env_global.InfAmmoEnabled = env_global.InfAmmoEnabled or false
+env_global.RapidFireEnabled = env_global.RapidFireEnabled or false
+env_global.FullBrightEnabled = env_global.FullBrightEnabled or false
+env_global.NoFogEnabled = env_global.NoFogEnabled or false
+
+env_global.WalkSpeedMultiplier = env_global.WalkSpeedMultiplier or 1
+env_global.JumpPowerMultiplier = env_global.JumpPowerMultiplier or 1
+
 -- [[ 伺服器等級 (Server-Level) 配置 ]]
 env_global.ServerLagEnabled = env_global.ServerLagEnabled or false
 env_global.ServerLagPower = env_global.ServerLagPower or 100 -- 請求數量
@@ -680,6 +695,147 @@ end
 
 -- [[ 暴力模式功能實作 ]]
 
+-- 碰撞箱擴大 (Hitbox Expander)
+task.spawn(function()
+    while true do
+        if env_global.HitboxExpanderEnabled then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= lp and player.Team ~= lp.Team and player.Character then
+                    local head = player.Character:FindFirstChild("Head")
+                    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                    if head and hrp then
+                        head.Size = Vector3.new(env_global.HitboxSize, env_global.HitboxSize, env_global.HitboxSize)
+                        head.Transparency = env_global.HitboxTransparency
+                        head.CanCollide = false
+                        
+                        hrp.Size = Vector3.new(env_global.HitboxSize, env_global.HitboxSize, env_global.HitboxSize)
+                        hrp.Transparency = env_global.HitboxTransparency
+                        hrp.CanCollide = false
+                    end
+                end
+            end
+        else
+            -- 恢復原始大小
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Character then
+                    local head = player.Character:FindFirstChild("Head")
+                    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                    if head then head.Size = Vector3.new(2, 1, 1); head.Transparency = 0 end
+                    if hrp then hrp.Size = Vector3.new(2, 2, 1); hrp.Transparency = 1 end
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+-- 穿牆 (NoClip) 與 無限跳躍 (InfJump)
+RunService.Stepped:Connect(function()
+    if env_global.NoClipEnabled and lp.Character then
+        for _, v in ipairs(lp.Character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if env_global.InfJumpEnabled and lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") then
+        lp.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- [[ 武器與玩家增強實作 ]]
+
+-- 無限彈藥與快速射擊 (透過 Hook 實現)
+local function SetupWeaponMods()
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local args = {...}
+        local method = getnamecallmethod()
+        
+        if not checkcaller() and env_global.InfAmmoEnabled then
+            -- 嘗試攔截彈藥減少的 Remote
+            local name = tostring(self):lower()
+            if method == "FireServer" and (name:find("ammo") or name:find("reload") or name:find("consume")) then
+                return -- 阻止彈藥減少請求
+            end
+        end
+        
+        return oldNamecall(self, ...)
+    end)
+    
+    -- 循環檢查本地武器屬性
+    task.spawn(function()
+        while true do
+            if env_global.RapidFireEnabled or env_global.InfAmmoEnabled then
+                for _, v in ipairs(lp.Character:GetDescendants()) do
+                    if v:IsA("ModuleScript") then
+                        -- 嘗試修改常見的武器配置模組
+                        local s, m = pcall(require, v)
+                        if s and type(m) == "table" then
+                            if env_global.InfAmmoEnabled then
+                                if m.Ammo then m.Ammo = 999 end
+                                if m.MaxAmmo then m.MaxAmmo = 999 end
+                                if m.StoredAmmo then m.StoredAmmo = 999 end
+                            end
+                            if env_global.RapidFireEnabled then
+                                if m.FireRate then m.FireRate = 0.01 end
+                                if m.Cooldown then m.Cooldown = 0.01 end
+                                if m.Delay then m.Delay = 0 end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(2)
+        end
+    end)
+end
+
+-- 環境修改 (全亮與無霧)
+task.spawn(function()
+    local lighting = game:GetService("Lighting")
+    local origFogStart = lighting.FogStart
+    local origFogEnd = lighting.FogEnd
+    local origBrightness = lighting.Brightness
+    local origClockTime = lighting.ClockTime
+    
+    while true do
+        if env_global.FullBrightEnabled then
+            lighting.Brightness = 2
+            lighting.ClockTime = 14
+            lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        end
+        if env_global.NoFogEnabled then
+            lighting.FogStart = 999999
+            lighting.FogEnd = 999999
+        end
+        task.wait(1)
+        if not env_global.FullBrightEnabled and not env_global.NoFogEnabled then
+            -- 這裡可以選擇不恢復，或根據需要恢復
+        end
+    end
+end)
+
+-- 玩家屬性倍率
+task.spawn(function()
+    while true do
+        local char = lp.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if env_global.WalkSpeedMultiplier > 1 then
+                hum.WalkSpeed = 16 * env_global.WalkSpeedMultiplier
+            end
+            if env_global.JumpPowerMultiplier > 1 then
+                hum.JumpPower = 50 * env_global.JumpPowerMultiplier
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
 -- 平滑移動至目標 (替代傳送)
 local function SmoothMoveTo(targetCFrame, speed)
     local char = lp.Character
@@ -972,6 +1128,14 @@ end)
 
 -- [[ 模組接口 ]]
 function Combat.Init(Gui, Notify, CatFunctions)
+    -- 初始化反偵測系統與武器模組
+    task.spawn(function()
+        SetupAntiCheatBypass()
+        SetupWeaponMods()
+    end)
+
+    Notify("射擊模組", "已加載 v" .. env_global.CombatVersion)
+    
     -- 如果有 GUI 系統，可以在這裡添加選項
     return {
         ToggleAimbot = function(state)
@@ -1067,6 +1231,51 @@ function Combat.Init(Gui, Notify, CatFunctions)
                 local count = NukeAntiCheat()
                 Notify("安全系統", "反外掛清理: 刪除了 " .. count .. " 個疑似組件")
             end
+        end,
+
+        ToggleHitboxExpander = function(state)
+            env_global.HitboxExpanderEnabled = state
+            Notify("暴力模式", "碰撞箱擴大: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleNoClip = function(state)
+            env_global.NoClipEnabled = state
+            Notify("暴力模式", "穿牆移動: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleInfJump = function(state)
+            env_global.InfJumpEnabled = state
+            Notify("功能增強", "無限跳躍: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleInfAmmo = function(state)
+            env_global.InfAmmoEnabled = state
+            Notify("武器增強", "無限彈藥: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleRapidFire = function(state)
+            env_global.RapidFireEnabled = state
+            Notify("武器增強", "快速射擊: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleFullBright = function(state)
+            env_global.FullBrightEnabled = state
+            Notify("環境修改", "全亮模式: " .. (state and "開啟" or "關閉"))
+        end,
+
+        ToggleNoFog = function(state)
+            env_global.NoFogEnabled = state
+            Notify("環境修改", "移除霧氣: " .. (state and "開啟" or "關閉"))
+        end,
+
+        SetWalkSpeedMult = function(val)
+            env_global.WalkSpeedMultiplier = val
+            Notify("玩家屬性", "移速倍率已設置為: " .. val)
+        end,
+
+        SetJumpPowerMult = function(val)
+            env_global.JumpPowerMultiplier = val
+            Notify("玩家屬性", "跳躍倍率已設置為: " .. val)
         end,
 
         -- 伺服器等級功能
