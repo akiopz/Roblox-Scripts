@@ -94,15 +94,93 @@ function functionsModule.Init(env)
         end)
     end
 
-    CatFunctions.ToggleNoSlowdown = function(state)
-        _G.NoSlowdown = state
+    CatFunctions.ToggleNoSlowDown = function(state)
+        _G.NoSlowDown = state
         task.spawn(function()
-            while _G.NoSlowdown and task.wait() do
+            while _G.NoSlowDown and task.wait() do
                 if lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
-                    lplr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = _G.SpeedValue or 16
+                    lplr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = _G.SpeedValue or 23
                 end
             end
         end)
+    end
+
+    CatFunctions.ToggleReach = function(state)
+        _G.Reach = state
+        if not _G.Reach then
+            _G.KillAuraRange = 18
+            return
+        end
+        _G.KillAuraRange = 25
+    end
+
+    CatFunctions.ToggleAutoClicker = function(state)
+        _G.AutoClicker = state
+        if not _G.AutoClicker then return end
+        task.spawn(function()
+            while _G.AutoClicker and task.wait(1 / (_G.KillAuraCPS or 10)) do
+                local char = lplr.Character
+                local tool = char and char:FindFirstChildOfClass("Tool")
+                if tool then
+                    tool:Activate()
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleLongJump = function(state)
+        _G.LongJump = state
+        if not _G.LongJump then return end
+        task.spawn(function()
+            if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = lplr.Character.HumanoidRootPart
+                local hum = lplr.Character:FindFirstChildOfClass("Humanoid")
+                hum:ChangeState("Jumping")
+                hrp.Velocity = hrp.Velocity + (hrp.CFrame.LookVector * 50) + Vector3_new(0, 30, 0)
+                task.wait(0.5)
+                _G.LongJump = false
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoBridge = function(state)
+        _G.AutoBridge = state
+        if not _G.AutoBridge then return end
+        task.spawn(function()
+            while _G.AutoBridge and task.wait(0.1) do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    local pos = hrp.Position + (hrp.CFrame.LookVector * 3) - Vector3_new(0, 4, 0)
+                    local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true)
+                    if remote then
+                        remote:FireServer({["blockType"] = "wool_white", ["position"] = pos})
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoResourceFarm = function(state)
+        _G.AutoResourceFarm = state
+        if not _G.AutoResourceFarm then return end
+        task.spawn(function()
+            while _G.AutoResourceFarm and task.wait(1) do
+                local state = CatFunctions.GetBattlefieldState()
+                if #state.resources > 0 then
+                    local target = state.resources[1]
+                    local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp and target.dist > 5 then
+                        local tween = TweenService:Create(hrp, TweenInfo.new(target.dist / 20), {CFrame = target.part.CFrame + Vector3_new(0, 3, 0)})
+                        tween:Play()
+                        tween.Completed:Wait()
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleDamageIndicator = function(state)
+        _G.DamageIndicator = state
     end
 
     CatFunctions.ToggleSpider = function(state)
@@ -289,27 +367,53 @@ function functionsModule.Init(env)
             end
         end
 
-        local function scan(parent)
-            for _, v in pairs(parent:GetChildren()) do
-                local name = v.Name:lower()
-                if name:find("diamond") or name:find("emerald") or name:find("iron") then
-                    local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
-                    if p then
-                        table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
+        local searchFolders = {
+            workspace:FindFirstChild("ItemDrops"),
+            workspace:FindFirstChild("Generators"),
+            workspace:FindFirstChild("Beds"),
+            workspace:FindFirstChild("Items"),
+            workspace:FindFirstChild("Pickups")
+        }
+
+        for _, folder in ipairs(searchFolders) do
+            if folder then
+                for _, v in pairs(folder:GetDescendants()) do
+                    local name = v.Name:lower()
+                    if name:find("diamond") or name:find("emerald") or name:find("iron") then
+                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                        if p then
+                            table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
+                        end
                     end
-                end
-                if name:find("bed") then
-                    local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
-                    if p then
-                        table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                    if name:find("bed") then
+                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                        if p then
+                            table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                        end
                     end
-                end
-                if v:IsA("Folder") or v:IsA("Model") then
-                    scan(v)
                 end
             end
         end
-        scan(workspace)
+
+        if #state.resources == 0 or #state.beds == 0 then
+            for _, v in pairs(workspace:GetChildren()) do
+                if v:IsA("BasePart") or v:IsA("Model") then
+                    local name = v.Name:lower()
+                    if name:find("diamond") or name:find("emerald") or name:find("iron") then
+                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                        if p then
+                            table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
+                        end
+                    end
+                    if name:find("bed") then
+                        local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                        if p then
+                            table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                        end
+                    end
+                end
+            end
+        end
         
         table.sort(state.resources, function(a, b) return a.dist < b.dist end)
         

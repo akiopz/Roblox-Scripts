@@ -38,12 +38,27 @@ function AIModule.Init(CatFunctions, Blatant)
             Blatant.ToggleAutoBuyPro(true)
             Blatant.ToggleAutoArmor(true)
             
+            local lastPos = Vector3_new(0,0,0)
+            local lastMoveTime = tick()
+
             task_spawn(function()
                 while _G.GodModeAI and task_wait(0.02) do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum and hum.Health > 0 then
+                        -- Stuck Detection
+                        if (hrp.Position - lastPos).Magnitude < 0.5 then
+                            if tick() - lastMoveTime > 2 then
+                                hum.Jump = true
+                                hum:Move(Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)), true)
+                                lastMoveTime = tick()
+                            end
+                        else
+                            lastPos = hrp.Position
+                            lastMoveTime = tick()
+                        end
+
                         local battlefield = CatFunctions.GetBattlefieldState()
                         local target = nil
                         local minDist = math.huge
@@ -115,12 +130,27 @@ function AIModule.Init(CatFunctions, Blatant)
             Blatant.ToggleAutoBuyPro(true)
             Blatant.ToggleAutoArmor(true)
             
+            local lastPos = Vector3_new(0,0,0)
+            local lastMoveTime = tick()
+
             task_spawn(function()
                 while _G.AI_Enabled and task_wait(0.1) do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     if hrp and hum and hum.Health > 0 then
+                        -- Stuck Detection
+                        if (hrp.Position - lastPos).Magnitude < 0.5 then
+                            if tick() - lastMoveTime > 2 then
+                                hum.Jump = true
+                                hum:Move(Vector3_new(math.random(-1, 1), 0, math.random(-1, 1)), true)
+                                lastMoveTime = tick()
+                            end
+                        else
+                            lastPos = hrp.Position
+                            lastMoveTime = tick()
+                        end
+
                         local battlefield = CatFunctions.GetBattlefieldState()
                         local target = nil
                         
