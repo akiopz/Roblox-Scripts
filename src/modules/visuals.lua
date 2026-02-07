@@ -123,6 +123,237 @@ function VisualsModule.Init(Gui, Notify)
         Gui.SafeConnect(player.CharacterAdded, OnCharacterAdded)
     end
 
+    -- 連線透視 (Tracers)
+    local function CreateTracer(player)
+        if player == lp then return end
+        local line = nil
+        pcall(function()
+            line = Drawing.new("Line")
+            line.Thickness = 1
+            line.Color = Color3_fromRGB(255, 255, 255)
+            line.Transparency = 0.8
+        end)
+        if not line then return end
+
+        task_spawn(function()
+            while _G.TracersEnabled and player.Parent do
+                local char = player.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local screenPos, onScreen = nil, false
+                
+                if root then
+                    screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(root.Position)
+                end
+                
+                if onScreen and screenPos then
+                    line.From = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y)
+                    line.To = Vector2.new(screenPos.X, screenPos.Y)
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+                task_wait()
+            end
+            line:Remove()
+        end)
+    end
+
+    -- 全亮模式 (Fullbright)
+    local function ToggleFullbright(state)
+        _G.FullbrightEnabled = state
+        if _G.FullbrightEnabled then
+            task_spawn(function()
+                local Lighting = game:GetService("Lighting")
+                local oldBrightness = Lighting.Brightness
+                local oldClockTime = Lighting.ClockTime
+                local oldFogEnd = Lighting.FogEnd
+                local oldGlobalShadows = Lighting.GlobalShadows
+                
+                while _G.FullbrightEnabled do
+                    Lighting.Brightness = 2
+                    Lighting.ClockTime = 14
+                    Lighting.FogEnd = 100000
+                    Lighting.GlobalShadows = false
+                    task_wait(0.5)
+                end
+                
+                Lighting.Brightness = oldBrightness
+                Lighting.ClockTime = oldClockTime
+                Lighting.FogEnd = oldFogEnd
+                Lighting.GlobalShadows = oldGlobalShadows
+            end)
+        end
+    end
+
+    -- 箱子透視 (Chest ESP)
+    local function CreateChestESP(chest)
+        if not chest or chest:FindFirstChild("ChestESP") then return end
+        
+        local billboard = Instance.new("BillboardGui")
+        Gui.ApplyProperties(billboard, {
+            Name = "ChestESP",
+            Adornee = chest,
+            Size = UDim2_new(0, 100, 0, 40),
+            AlwaysOnTop = true,
+            Parent = chest
+        })
+        
+        local label = Instance.new("TextLabel")
+        Gui.ApplyProperties(label, {
+            Parent = billboard,
+            BackgroundTransparency = 1,
+            Size = UDim2_new(1, 0, 1, 0),
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Color3_fromRGB(255, 170, 0),
+            TextSize = 12,
+            TextStrokeTransparency = 0.5,
+            Text = "箱子 (Chest)"
+        })
+        
+        task_spawn(function()
+            while _G.ChestESPEnabled and chest.Parent do
+                task_wait(1)
+            end
+            billboard:Destroy()
+        end)
+    end
+
+    -- 掉落物透視 (Item ESP)
+    local function CreateItemESP(item)
+        if not item or item:FindFirstChild("ItemESP") then return end
+        
+        local billboard = Instance.new("BillboardGui")
+        Gui.ApplyProperties(billboard, {
+            Name = "ItemESP",
+            Adornee = item,
+            Size = UDim2_new(0, 100, 0, 40),
+            AlwaysOnTop = true,
+            Parent = item
+        })
+        
+        local label = Instance.new("TextLabel")
+        Gui.ApplyProperties(label, {
+            Parent = billboard,
+            BackgroundTransparency = 1,
+            Size = UDim2_new(1, 0, 1, 0),
+            Font = Enum.Font.Gotham,
+            TextColor3 = Color3_fromRGB(0, 255, 255),
+            TextSize = 10,
+            TextStrokeTransparency = 0.5,
+            Text = item.Name
+        })
+        
+        task_spawn(function()
+            while _G.ItemESPEnabled and item.Parent do
+                task_wait(1)
+            end
+            billboard:Destroy()
+        end)
+    end
+
+    -- 商店透視 (Shop ESP)
+    local function CreateShopESP(npc)
+        if not npc or npc:FindFirstChild("ShopESP") then return end
+        
+        local billboard = Instance.new("BillboardGui")
+        Gui.ApplyProperties(billboard, {
+            Name = "ShopESP",
+            Adornee = npc,
+            Size = UDim2_new(0, 100, 0, 40),
+            AlwaysOnTop = true,
+            Parent = npc
+        })
+        
+        local label = Instance.new("TextLabel")
+        Gui.ApplyProperties(label, {
+            Parent = billboard,
+            BackgroundTransparency = 1,
+            Size = UDim2_new(1, 0, 1, 0),
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Color3_fromRGB(0, 255, 0),
+            TextSize = 14,
+            TextStrokeTransparency = 0.5,
+            Text = "商店 (Shop)"
+        })
+    end
+
+    -- 雷達 (Radar)
+    local function CreateRadar()
+        if _G.RadarGui then _G.RadarGui:Destroy() end
+        
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "CatRadar"
+        screenGui.Parent = game:GetService("CoreGui")
+        _G.RadarGui = screenGui
+        
+        local mainFrame = Instance.new("Frame")
+        Gui.ApplyProperties(mainFrame, {
+            Parent = screenGui,
+            BackgroundColor3 = Color3_fromRGB(20, 20, 20),
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 1,
+            BorderColor3 = Color3_fromRGB(100, 100, 100),
+            Position = UDim2_new(0, 20, 0, 200),
+            Size = UDim2_new(0, 150, 0, 150)
+        })
+        
+        local centerDot = Instance.new("Frame")
+        Gui.ApplyProperties(centerDot, {
+            Parent = mainFrame,
+            BackgroundColor3 = Color3_fromRGB(255, 255, 255),
+            Position = UDim2_new(0.5, -2, 0.5, -2),
+            Size = UDim2_new(0, 4, 0, 4),
+            ZIndex = 2
+        })
+        
+        local playerDots = {}
+        
+        task_spawn(function()
+            while _G.RadarEnabled and screenGui.Parent do
+                local char = lp.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if root then
+                    for _, player in ipairs(Players:GetPlayers()) do
+                        if player ~= lp and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            local pRoot = player.Character.HumanoidRootPart
+                            local diff = pRoot.Position - root.Position
+                            local relPos = Vector2.new(diff.X, diff.Z)
+                            
+                            local dot = playerDots[player]
+                            if not dot then
+                                dot = Instance.new("Frame")
+                                Gui.ApplyProperties(dot, {
+                                    Parent = mainFrame,
+                                    BackgroundColor3 = player.TeamColor.Color or Color3_fromRGB(255, 0, 0),
+                                    Size = UDim2_new(0, 4, 0, 4),
+                                    BorderSizePixel = 0
+                                })
+                                playerDots[player] = dot
+                            end
+                            
+                            local scale = 1.5
+                            local radarX = 0.5 + (relPos.X / (150 * scale))
+                            local radarY = 0.5 + (relPos.Y / (150 * scale))
+                            
+                            if radarX >= 0 and radarX <= 1 and radarY >= 0 and radarY <= 1 then
+                                dot.Position = UDim2_new(radarX, -2, radarY, -2)
+                                dot.Visible = true
+                            else
+                                dot.Visible = false
+                            end
+                        elseif playerDots[player] then
+                            playerDots[player].Visible = false
+                        end
+                    end
+                end
+                task_wait(0.05)
+            end
+            if screenGui then screenGui:Destroy() end
+            _G.RadarGui = nil
+        end)
+    end
+
     return {
         ToggleHighlight = function()
             for _, player in ipairs(Players:GetPlayers()) do
@@ -139,6 +370,66 @@ function VisualsModule.Init(Gui, Notify)
             if _G.FullESPEnabled then
                 for _, p in ipairs(Players:GetPlayers()) do CreateFullESP(p) end
                 Gui.SafeConnect(Players.PlayerAdded, CreateFullESP)
+            end
+        end,
+        ToggleTracers = function(state)
+            _G.TracersEnabled = state
+            if _G.TracersEnabled then
+                for _, p in ipairs(Players:GetPlayers()) do CreateTracer(p) end
+                Gui.SafeConnect(Players.PlayerAdded, CreateTracer)
+            end
+        end,
+        ToggleFullbright = ToggleFullbright,
+        ToggleChestESP = function(state)
+            _G.ChestESPEnabled = state
+            if _G.ChestESPEnabled then
+                task_spawn(function()
+                    while _G.ChestESPEnabled and task_wait(2) do
+                        for _, v in ipairs(workspace:GetDescendants()) do
+                            if not _G.ChestESPEnabled then break end
+                            if v:IsA("BasePart") and v.Name:lower():find("chest") then
+                                CreateChestESP(v)
+                            end
+                        end
+                    end
+                end)
+            end
+        end,
+        ToggleItemESP = function(state)
+            _G.ItemESPEnabled = state
+            if _G.ItemESPEnabled then
+                task_spawn(function()
+                    while _G.ItemESPEnabled and task_wait(2) do
+                        local drops = workspace:FindFirstChild("ItemDrops") or workspace:FindFirstChild("Drops")
+                        if drops then
+                            for _, v in ipairs(drops:GetChildren()) do
+                                if not _G.ItemESPEnabled then break end
+                                CreateItemESP(v)
+                            end
+                        end
+                    end
+                end)
+            end
+        end,
+        ToggleShopESP = function(state)
+            _G.ShopESPEnabled = state
+            if _G.ShopESPEnabled then
+                task_spawn(function()
+                    while _G.ShopESPEnabled and task_wait(2) do
+                        for _, v in ipairs(workspace:GetDescendants()) do
+                            if not _G.ShopESPEnabled then break end
+                            if v:IsA("Model") and (v.Name:lower():find("shop") or v.Name:lower():find("merchant")) then
+                                CreateShopESP(v)
+                            end
+                        end
+                    end
+                end)
+            end
+        end,
+        ToggleRadar = function(state)
+            _G.RadarEnabled = state
+            if _G.RadarEnabled then
+                CreateRadar()
             end
         end
     }

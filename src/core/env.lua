@@ -19,6 +19,7 @@ local CFrame_new = CFrame.new
 local task_spawn = task.spawn
 local task_wait = task.wait
 local math_random = math.random
+local math_floor = math.floor
 
 local function GetEnvironment()
     local e = {
@@ -55,5 +56,6 @@ return {
     CFrame_new = CFrame_new,
     task_spawn = task_spawn,
     task_wait = task_wait,
-    math_random = math_random
+    math_random = math_random,
+    math_floor = math_floor
 }

@@ -1,6 +1,5 @@
 -- Halol (V4.0) 核心加載器 (完整模組化版本)
 ---@diagnostic disable: undefined-global, deprecated, undefined-field
-print("DEBUG: Halol V4.0 Loader Entry")
 print("Halol V4.0 開始加載...")
 
 local function Notify(title, text, duration)
@@ -64,16 +63,15 @@ local success, err = pcall(function()
     -- 2. 加載功能與 AI 模組
     local functionsModule = GetScript("src/modules/functions.lua")
     local CatFunctions = functionsModule.Init(env)
-    
-    local aiModule = GetScript("src/modules/ai.lua")
-    local AI = aiModule.Init(CatFunctions)
-    
-    print("DEBUG: 功能模組已加載")
-    local visualsModule = GetScript("src/modules/visuals.lua")
-    local Visuals = visualsModule.Init(mainGui, Notify)
-    
     local blatantModule = GetScript("src/modules/blatant.lua")
     local Blatant = blatantModule.Init(mainGui, Notify)
+
+    -- 初始化 AI
+    local aiModule = GetScript("src/modules/ai.lua")
+    local AI = aiModule.Init(CatFunctions, Blatant)
+
+    local visualsModule = GetScript("src/modules/visuals.lua")
+    local Visuals = visualsModule.Init(mainGui, Notify)
 
     -- 3. 初始化分頁
     local firstTab = GuiUtils.CreateTab("自動核心")
@@ -85,7 +83,87 @@ local success, err = pcall(function()
     if firstTab then firstTab.Switch() end
     
     GuiUtils.AddScript("自動核心", "自動掛機 (Auto Play)", "全自動作戰與資源收集。", function()
-        AI.ToggleAutoPlay(true)
+        AI.ToggleAutoPlay(not _G.AI_Enabled)
+    end)
+
+    GuiUtils.AddScript("自動核心", "戰神模式 (God Mode)", "整合 KillAura, NoFall, Reach 與 AutoTool。", function()
+        AI.ToggleGodMode(not _G.GodModeAI)
+    end)
+
+    GuiUtils.AddScript("自動核心", "加速移動 (Speed)", "大幅提升玩家移動速度。", function()
+        CatFunctions.ToggleSpeed()
+    end)
+
+    GuiUtils.AddScript("自動核心", "無減速 (No Slow Down)", "防止在使用物品或攻擊時減速。", function()
+        CatFunctions.ToggleNoSlowDown()
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動連點 (Auto Clicker)", "自動快速點擊工具或武器。", function()
+        CatFunctions.ToggleAutoClicker()
+    end)
+
+    GuiUtils.AddScript("自動核心", "殺戮光環 (Kill Aura)", "自動攻擊範圍內的敵對玩家。", function()
+        CatFunctions.ToggleKillAura()
+    end)
+
+    GuiUtils.AddScript("自動核心", "光環設置 (Aura Setting)", "切換多目標模式 (當前: " .. (_G.KillAuraMaxTargets == 1 and "單目標" or "多目標") .. ")。", function()
+        if _G.KillAuraMaxTargets == 1 then
+            _G.KillAuraMaxTargets = 5
+            Notify("殺戮光環", "已切換至多目標模式 (上限 5)", 2)
+        else
+            _G.KillAuraMaxTargets = 1
+            Notify("殺戮光環", "已切換至單目標模式", 2)
+        end
+    end)
+
+    GuiUtils.AddScript("自動核心", "範圍攻擊 (Reach)", "增加近戰攻擊的有效範圍。", function()
+        CatFunctions.ToggleReach()
+    end)
+
+    GuiUtils.AddScript("自動核心", "防摔傷 (No Fall)", "防止從高處墜落造成的傷害。", function()
+        CatFunctions.ToggleNoFall()
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動工具 (Auto Tool)", "自動切換最佳工具並快速破壞方塊。", function()
+        CatFunctions.ToggleAutoToolFastBreak()
+    end)
+
+    GuiUtils.AddScript("自動核心", "飛行 (Fly)", "在遊戲中自由飛行。", function()
+        CatFunctions.ToggleFly()
+    end)
+
+    GuiUtils.AddScript("自動核心", "無限跳躍 (Infinite Jump)", "允許在空中連續跳躍。", function()
+        CatFunctions.ToggleInfiniteJump()
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動架橋 (Auto Bridge)", "移動時自動在腳下放置方塊。", function()
+        CatFunctions.ToggleAutoBridge()
+    end)
+
+    GuiUtils.AddScript("自動核心", "長跳 (Long Jump)", "向前方發動強力跳躍衝刺。", function()
+        CatFunctions.ToggleLongJump()
+    end)
+
+    GuiUtils.AddScript("自動核心", "高級架橋 (Scaffold)", "自動在腳下精準放置方塊，支持斜向移動。", function()
+        CatFunctions.ToggleScaffold()
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動農資源 (Auto Farm)", "自動傳送到最近的資源點。", function()
+        CatFunctions.ToggleAutoResourceFarm()
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動購買 (Auto Buy)", "自動購買方塊、劍與護甲。", function()
+        _G.AutoBuy = not _G.AutoBuy
+        Blatant.ToggleAutoBuy(_G.AutoBuy)
+    end)
+
+    GuiUtils.AddScript("自動核心", "自動穿甲 (Auto Armor)", "獲得護甲時自動穿上。", function()
+        _G.AutoArmor = not _G.AutoArmor
+        Blatant.ToggleAutoArmor(_G.AutoArmor)
+    end)
+
+    GuiUtils.AddScript("自動核心", "遠程光環 (Projectile Aura)", "手持弓或火球時自動瞄準最近敵人。", function()
+        Blatant.ToggleProjectileAura(not _G.ProjectileAura)
     end)
 
     -- 視覺功能
@@ -98,10 +176,73 @@ local success, err = pcall(function()
         Visuals.ToggleFullESP(_G.FullESPEnabled)
     end)
 
+    GuiUtils.AddScript("視覺功能", "連線透視 (Tracers)", "顯示指向玩家的追蹤連線。", function()
+        _G.TracersEnabled = not _G.TracersEnabled
+        Visuals.ToggleTracers(_G.TracersEnabled)
+    end)
+
+    GuiUtils.AddScript("視覺功能", "全亮模式 (Fullbright)", "移除所有陰影並使世界明亮。", function()
+        _G.FullbrightEnabled = not _G.FullbrightEnabled
+        Visuals.ToggleFullbright(_G.FullbrightEnabled)
+    end)
+
+    GuiUtils.AddScript("視覺功能", "傷害顯示 (Damage Indicator)", "顯示對敵人造成的傷害數值。", function()
+        CatFunctions.ToggleDamageIndicator()
+    end)
+
+    GuiUtils.AddScript("視覺功能", "箱子透視 (Chest ESP)", "顯示地圖上所有箱子的位置。", function()
+        _G.ChestESPEnabled = not _G.ChestESPEnabled
+        Visuals.ToggleChestESP(_G.ChestESPEnabled)
+    end)
+
+    GuiUtils.AddScript("視覺功能", "資源透視 (Item ESP)", "顯示掉落資源（鐵、金、鑽石等）的位置。", function()
+        _G.ItemESPEnabled = not _G.ItemESPEnabled
+        Visuals.ToggleItemESP(_G.ItemESPEnabled)
+    end)
+
+    GuiUtils.AddScript("視覺功能", "商店透視 (Shop ESP)", "顯示地圖上所有商店與商人的位置。", function()
+        _G.ShopESPEnabled = not _G.ShopESPEnabled
+        Visuals.ToggleShopESP(_G.ShopESPEnabled)
+    end)
+
+    GuiUtils.AddScript("視覺功能", "雷達 (Radar)", "顯示周圍玩家的小地圖雷達。", function()
+        _G.RadarEnabled = not _G.RadarEnabled
+        Visuals.ToggleRadar(_G.RadarEnabled)
+    end)
+
     -- 暴力功能
     GuiUtils.AddScript("暴力功能", "全員墜空 (Void All)", "將伺服器玩家甩入虛空。", function()
         _G.VoidAll = not _G.VoidAll
         Blatant.ToggleVoidAll(_G.VoidAll)
+    end)
+
+    GuiUtils.AddScript("暴力功能", "自動偷箱 (Chest Stealer)", "自動拿取附近箱子內的所有物品。", function()
+        _G.ChestStealer = not _G.ChestStealer
+        Blatant.ToggleChestStealer(_G.ChestStealer)
+    end)
+
+    GuiUtils.AddScript("暴力功能", "自動破床 (Auto Target Break)", "自動破壞 25 格內的敵方目標。", function()
+        _G.AutoTargetBreak = not _G.AutoTargetBreak
+        Notify("自動破目標", _G.AutoTargetBreak and "已開啟" or "已關閉", 2)
+    end)
+
+    GuiUtils.AddScript("暴力功能", "全圖資源收集 (Global Collect)", "自動傳送到地圖上所有掉落資源的位置。", function()
+        _G.GlobalResourceCollect = not _G.GlobalResourceCollect
+        Blatant.ToggleGlobalResourceCollect(_G.GlobalResourceCollect)
+    end)
+
+    GuiUtils.AddScript("暴力功能", "暴力加速 (CFrame Speed)", "使用座標偏移進行極速移動，可能導致回溯。", function()
+        CatFunctions.ToggleCFrameSpeed()
+    end)
+
+    GuiUtils.AddScript("暴力功能", "高級自動購買 (Auto Buy Pro)", "根據優先級自動購買最強裝備。", function()
+        _G.AutoBuyPro = not _G.AutoBuyPro
+        Blatant.ToggleAutoBuyPro(_G.AutoBuyPro)
+    end)
+
+    GuiUtils.AddScript("暴力功能", "自動嘲諷 (Auto Toxic)", "在聊天頻道自動發送嘲諷訊息。", function()
+        _G.AutoToxic = not _G.AutoToxic
+        Blatant.ToggleAutoToxic(_G.AutoToxic)
     end)
 
     -- BEDWARS 專區
@@ -110,16 +251,8 @@ local success, err = pcall(function()
         Blatant.ToggleFastBreak(_G.FastBreak)
     end)
 
-    GuiUtils.AddScript("BEDWARS 專區", "自動農資源 (Auto Farm)", "自動傳送到最近的資源點。", function()
-        CatFunctions.ToggleAutoResourceFarm()
-    end)
-
-    GuiUtils.AddScript("BEDWARS 專區", "無限跳躍 (Infinite Jump)", "在空中進行無限次跳躍。", function()
-        CatFunctions.ToggleInfiniteJump()
-    end)
-
-    GuiUtils.AddScript("BEDWARS 專區", "無減速 (No Slowdown)", "移除進食或受擊時的減速效果。", function()
-        CatFunctions.ToggleNoSlowdown()
+    GuiUtils.AddScript("BEDWARS 專區", "玩家追蹤 (Player Tracker)", "即時顯示最近敵人的距離與名字。", function()
+        CatFunctions.TogglePlayerTracker()
     end)
 
     GuiUtils.AddScript("BEDWARS 專區", "反擊退 (Velocity)", "100% 垂直反擊退，防止被擊落。", function()
@@ -128,6 +261,34 @@ local success, err = pcall(function()
 
     GuiUtils.AddScript("BEDWARS 專區", "自動疾跑 (Auto Sprint)", "移動時自動進入疾跑狀態。", function()
         CatFunctions.ToggleAutoSprint()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "爬牆 (Spider)", "允許像蜘蛛一樣攀爬牆壁。", function()
+        CatFunctions.ToggleSpider()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "防掉落 (Anti-Void)", "快掉入虛空時自動傳送回地面。", function()
+        CatFunctions.ToggleAntiVoid()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動氣球 (Auto Balloon)", "掉入虛空時自動使用氣球。", function()
+        CatFunctions.ToggleAutoBalloon()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "方塊破壞 (Nuker)", "全自動破壞周圍 15 格內的方塊。", function()
+        CatFunctions.ToggleNuker()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "無攻擊延遲 (No Click Delay)", "移除攻擊間隔限制，大幅提升 DPS。", function()
+        CatFunctions.ToggleNoClickDelay()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動套裝能力 (Auto Kit Ability)", "全自動觸發當前套裝的特殊能力。", function()
+        CatFunctions.ToggleAutoKitAbility()
+    end)
+
+    GuiUtils.AddScript("BEDWARS 專區", "自動消耗品 (Auto Consume)", "低血量時自動使用蘋果或藥水。", function()
+        CatFunctions.ToggleAutoConsume()
     end)
 
     print("Halol V4.0 模組化版本初始化完成！")
