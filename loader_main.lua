@@ -14,7 +14,10 @@ env_global.ProjectileAura = env_global.ProjectileAura or false
 env_global.VelocityHorizontal = env_global.VelocityHorizontal or 15
 env_global.VelocityVertical = env_global.VelocityVertical or 100
 
-print("Halol V4.2 開始加載 (修復版本)...")
+print("Halol V4.3 開始加載 (深度修復版本)...")
+
+-- 增加一個隨機數來徹底繞過快取
+local sessionID = tostring(math.random(100000, 999999))
 
 env_global.AI_Enabled = env_global.AI_Enabled or false
 env_global.GodModeAI = env_global.GodModeAI or false
@@ -33,6 +36,8 @@ local function Notify(title, text, duration)
     end)
 end
 
+Notify("Halol V4.3", "正在從雲端獲取最新組件...", 3)
+
 local success, err = pcall(function()
     local HOSTS = {
         "https://raw.githubusercontent.com/akiopz/Roblox-Scripts/main/",
@@ -43,7 +48,7 @@ local success, err = pcall(function()
         print("正在獲取模組: " .. path)
         local lastErr
         for _, base in ipairs(HOSTS) do
-            local url = base .. path .. "?cb=" .. tostring(os.time())
+            local url = base .. path .. "?v=" .. sessionID .. "&t=" .. os.time()
             local ok, content = pcall(function()
                 return game:HttpGet(url)
             end)
@@ -66,7 +71,7 @@ local success, err = pcall(function()
         error(lastErr or ("下載未知錯誤: " .. path))
     end
 
-    Notify("Halol V4.0", "正在初始化核心模組...", 3)
+
 
     local env = GetScript("src/core/env.lua")
     
@@ -77,18 +82,18 @@ local success, err = pcall(function()
     local utilsModule = GetScript("src/core/utils.lua")
     local GuiUtils = utilsModule.Init(mainGui)
 
-    Notify("Halol V4.0", "核心加載成功，正在載入功能...", 3)
-
+    Notify("Halol V4.3", "核心組件已就緒，載入介面中...", 3)
+    
     local functionsModule = GetScript("src/modules/functions.lua")
     local CatFunctions = functionsModule.Init(env)
     local blatantModule = GetScript("src/modules/blatant.lua")
-    local Blatant = blatantModule.Init(mainGui, Notify, CatFunctions)
+    local Blatant = blatantModule.Init(mainGui, function(...) Notify("Halol V4.3", ...) end, CatFunctions)
 
     local aiModule = GetScript("src/modules/ai.lua")
     local AI = aiModule.Init(CatFunctions, Blatant)
 
     local visualsModule = GetScript("src/modules/visuals.lua")
-    local Visuals = visualsModule.Init(mainGui, Notify)
+    local Visuals = visualsModule.Init(mainGui, function(...) Notify("Halol V4.3", ...) end)
 
     local firstTab = GuiUtils.CreateTab("自動核心")
     GuiUtils.CreateTab("視覺功能")

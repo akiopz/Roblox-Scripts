@@ -29,7 +29,7 @@ local task_wait = task.wait
 
 local GuiModule = {}
 
-local function ApplyProperties(instance, props)
+function GuiModule.ApplyProperties(instance, props)
     for k, v in pairs(props) do
         instance[k] = v
     end
@@ -45,6 +45,7 @@ local function SafeConnect(signal, callback)
 end
 
 function GuiModule.CreateMainGui()
+    local ApplyProperties = GuiModule.ApplyProperties
     local ScreenGui = Instance.new("ScreenGui")
     local MainFrame = Instance.new("Frame")
     local MainCorner = Instance.new("UICorner")
@@ -302,7 +303,7 @@ function GuiModule.CreateMainGui()
         TabContainer = TabContainer,
         ContentContainer = ContentContainer,
         CloseButton = CloseButton,
-        ApplyProperties = ApplyProperties,
+        ApplyProperties = GuiModule.ApplyProperties,
         SafeConnect = SafeConnect
     }
 end
