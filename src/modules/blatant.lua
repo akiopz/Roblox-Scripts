@@ -1,6 +1,12 @@
 ---@diagnostic disable: undefined-global, undefined-field, deprecated, inject-field
-local getgenv = (getgenv or function() return _G end)
-local env_global = getgenv()
+---@return env_global
+local function get_env_safe()
+    ---@type env_global
+    local env = (getgenv or function() return _G end)()
+    return env
+end
+
+local env_global = get_env_safe()
 local game = game or env_global.game
 local workspace = workspace or env_global.workspace
 local task = task or env_global.task
@@ -18,6 +24,8 @@ local UDim2 = UDim2 or env_global.UDim2
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 local Vector3_new = Vector3.new
 local task_spawn = task.spawn
@@ -121,32 +129,32 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
             env_global.ChestStealer = state
             if not env_global.ChestStealer then return end
             task_spawn(function()
-                while env_global.ChestStealer and task_wait(0.5) do
+                while env_global.ChestStealer and task_wait(0.3) do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp then
-                        local foundChests = {}
+                        local nearestChest = nil
+                        local minDist = 20
+                        
+                        -- 優化：只搜索附近的箱子
                         for _, v in ipairs(workspace:GetDescendants()) do
                             if v:IsA("BasePart") and v.Name:lower():find("chest") then
-                                table.insert(foundChests, v)
+                                local d = (hrp.Position - v.Position).Magnitude
+                                if d < minDist then
+                                    minDist = d
+                                    nearestChest = v
+                                end
                             end
                         end
 
-                        for _, chest in ipairs(foundChests) do
-                            if not env_global.ChestStealer then break end
-                            
+                        if nearestChest then
                             local remote = ReplicatedStorage:FindFirstChild("ChestCollectItem", true) or 
                                            ReplicatedStorage:FindFirstChild("TakeItemFromChest", true)
                             
                             if remote then
-                                local oldCF = hrp.CFrame
-                                hrp.CFrame = chest.CFrame + Vector3_new(0, 3, 0)
+                                -- 使用遠程交互，不需要物理傳送 (防止被反作弊檢測)
+                                remote:FireServer({["chest"] = nearestChest})
                                 task_wait(0.1)
-                                
-                                remote:FireServer({["chest"] = chest})
-                                task_wait(0.1)
-                                
-                                hrp.CFrame = oldCF
                             end
                         end
                     end
@@ -200,21 +208,129 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
             end)
         end,
 
-        ToggleAutoArmor = function(state)
-            env_global.AutoArmor = state
-            if not env_global.AutoArmor then return end
-            task_spawn(function()
-                while env_global.AutoArmor and task_wait(1) do
+        ToggleSpeed = function(state)
+            env_global.Speed = state
+            if state then
+                Notify("移動加強", "極速移動已開啟 (Boost 模式)", "Success")
+                task_spawn(function()
+                    local lastPos = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") and lp.Character.HumanoidRootPart.Position
+                    while env_global.Speed do
+                        local char = lp.Character
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        if hum and root then
+                            local speed = env_global.SpeedValue or 23
+                            local moveDir = hum.MoveDirection
+                            
+                            -- Boost 模式：結合 Velocity 與 CFrame 微調
+                            if moveDir.Magnitude > 0 then
+                                root.Velocity = Vector3_new(moveDir.X * speed, root.Velocity.Y, moveDir.Z * speed)
+                                
+                                -- 繞過部分反作弊的位移補償
+                                if (speed > 20) then
+                                    root.CFrame = root.CFrame + (moveDir * 0.1)
+                                end
+                            end
+                        end
+                        RunService.Heartbeat:Wait()
+                    end
+                end)
+            end
+        end,
+
+        ToggleFly = function(state)
+            env_global.Fly = state
+            if state then
+                Notify("移動加強", "飛行模式已開啟 (Heatbeat 繞過模式)", "Success")
+                task_spawn(function()
+                    local speed = env_global.FlySpeed or 50
+                    local verticalVelocity = 0
+                    while env_global.Fly do
+                        local char = lp.Character
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            local moveDir = Vector3_new(0,0,0)
+                            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + workspace.CurrentCamera.CFrame.LookVector end
+                            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - workspace.CurrentCamera.CFrame.LookVector end
+                            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - workspace.CurrentCamera.CFrame.LookVector:Cross(Vector3_new(0,1,0)) end
+                            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + workspace.CurrentCamera.CFrame.LookVector:Cross(Vector3_new(0,1,0)) end
+                            
+                            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalVelocity = 1 elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalVelocity = -1 else verticalVelocity = 0 end
+                            
+                            -- Heatbeat 繞過：模擬微小的上下抖動防止被檢測為掛載飛行
+                            local jitter = math.sin(tick() * 20) * 0.05
+                            root.Velocity = Vector3_new(0, 0, 0)
+                            root.CFrame = root.CFrame + (moveDir * (speed / 10)) + Vector3_new(0, (verticalVelocity * (speed / 15)) + jitter, 0)
+                        end
+                        RunService.Heartbeat:Wait()
+                    end
+                end)
+            end
+        end,
+
+        ToggleSpider = function(state)
+            env_global.Spider = state
+            if state then
+                Notify("移動加強", "蜘蛛爬牆已開啟", "Success")
+                task_spawn(function()
+                    while env_global.Spider do
+                        local char = lp.Character
+                        local root = char and char:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            local ray = Ray.new(root.Position, root.CFrame.LookVector * 2)
+                            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                            if hit then
+                                root.Velocity = Vector3_new(root.Velocity.X, 30, root.Velocity.Z)
+                            end
+                        end
+                        task_wait(0.1)
+                     end
+                 end)
+             
+             end
+         end,
+
+        ToggleNoSlowdown = function(state)
+            env_global.NoSlowDown = state
+            if state then
+                Notify("戰鬥加強", "無減速已開啟", "Success")
+                task_spawn(function()
+                    while env_global.NoSlowDown do
+                        local char = lp.Character
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            hum.WalkSpeed = env_global.SpeedValue or 23
+                        end
+                        task_wait()
+                    end
+                end)
+            end
+        end,
+
+        ToggleNoclip = function(state)
+            env_global.NoClip = state
+            if state then
+                Notify("移動加強", "穿牆模式已開啟", "Success")
+                local conn
+                conn = RunService.Stepped:Connect(function()
+                    if not env_global.NoClip then 
+                        conn:Disconnect()
+                        return 
+                    end
                     local char = lp.Character
                     if char then
-                        local remote = ReplicatedStorage:FindFirstChild("EquipArmor", true) or 
-                                       ReplicatedStorage:FindFirstChild("WearArmor", true)
-                        if remote then
-                            remote:FireServer()
+                        for _, v in pairs(char:GetDescendants()) do
+                            if v:IsA("BasePart") then
+                                v.CanCollide = false
+                            end
                         end
                     end
-                end
-            end)
+                end)
+            end
+        end,
+
+         ToggleAutoArmor = function(state)
+            CatFunctions.ToggleAutoArmor(state)
         end,
 
         ToggleAutoBuyPro = function(state)
@@ -248,39 +364,19 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
         end,
 
         ToggleAutoToxic = function(state)
-            env_global.AutoToxic = state
-            if not env_global.AutoToxic then return end
-            local lastHealth = {}
-            task_spawn(function()
-                local messages = {
-                    "HALOL V4.0 ON TOP!",
-                    "GG! Easy kill.",
-                    "Imagine losing to a cat.",
-                    "You need some milk.",
-                    "Halol > Your client.",
-                    "Why so bad?",
-                    "Better luck next time!"
-                }
-                while env_global.AutoToxic and task_wait(0.5) do
-                    for _, p in ipairs(Players:GetPlayers()) do
-                        if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("Humanoid") then
-                            local hum = p.Character.Humanoid
-                            if lastHealth[p.Name] and lastHealth[p.Name] > 0 and hum.Health <= 0 then
-                                local msg = messages[math.random(1, #messages)]
-                                local sayMsg = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and 
-                                               ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
-                                if sayMsg then
-                                    sayMsg:FireServer(msg, "All")
-                                elseif game:GetService("TextChatService"):FindFirstChild("TextChannels") then
-                                    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
-                                end
-                                task_wait(2)
-                            end
-                            lastHealth[p.Name] = hum.Health
-                        end
-                    end
-                end
-            end)
+            CatFunctions.ToggleAutoToxic(state)
+        end,
+
+        ToggleAutoTool = function(state)
+            CatFunctions.ToggleAutoTool(state)
+        end,
+
+        ToggleAutoWeapon = function(state)
+            CatFunctions.ToggleAutoWeapon(state)
+        end,
+
+        ToggleAutoBlock = function(state)
+            CatFunctions.ToggleAutoBlock(state)
         end
     }
 end

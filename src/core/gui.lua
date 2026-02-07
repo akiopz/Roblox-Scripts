@@ -90,22 +90,84 @@ function GuiModule.CreateMainGui()
         Position = UDim2_new(0, 20, 0.5, -20), -- 預設靠左中間
         Size = UDim2_new(0, 50, 0, 50),
         Font = Enum.Font.GothamBold,
-        Text = "", -- 改用圖標或保持空白
+        Text = "", 
         ZIndex = 100,
         Visible = true
     })
 
-    local LogoImage = Instance.new("ImageLabel")
-    ApplyProperties(LogoImage, {
-        Name = "LogoImage",
+    -- 自定義科技圖標容器
+    local IconContainer = Instance.new("Frame")
+    ApplyProperties(IconContainer, {
+        Name = "IconContainer",
         Parent = ToggleButton,
         BackgroundTransparency = 1,
-        Position = UDim2_new(0.15, 0, 0.15, 0),
-        Size = UDim2_new(0.7, 0, 0.7, 0),
-        Image = "rbxassetid://7072724424", -- 科技感電路圖標
-        ImageColor3 = Color3_fromRGB(0, 255, 255),
+        Position = UDim2_new(0.5, -15, 0.5, -15),
+        Size = UDim2_new(0, 30, 0, 30),
         ZIndex = 101
     })
+
+    -- 繪製科技感「H」或「Cat」圖標
+    local function CreateTechIcon(parent)
+        -- 左側柱
+        local LeftBar = Instance.new("Frame")
+        local LBCorner = Instance.new("UICorner")
+        ApplyProperties(LeftBar, {
+            Name = "LeftBar",
+            Parent = parent,
+            BackgroundColor3 = Color3_fromRGB(0, 255, 255),
+            Position = UDim2_new(0.1, 0, 0.2, 0),
+            Size = UDim2_new(0.15, 0, 0.6, 0),
+            ZIndex = 102
+        })
+        LBCorner.CornerRadius = UDim.new(1, 0)
+        LBCorner.Parent = LeftBar
+
+        -- 右側柱
+        local RightBar = Instance.new("Frame")
+        local RBCorner = Instance.new("UICorner")
+        ApplyProperties(RightBar, {
+            Name = "RightBar",
+            Parent = parent,
+            BackgroundColor3 = Color3_fromRGB(0, 255, 255),
+            Position = UDim2_new(0.75, 0, 0.2, 0),
+            Size = UDim2_new(0.15, 0, 0.6, 0),
+            ZIndex = 102
+        })
+        RBCorner.CornerRadius = UDim.new(1, 0)
+        RBCorner.Parent = RightBar
+
+        -- 中間橫桿 (閃爍)
+        local MidBar = Instance.new("Frame")
+        local MBCorner = Instance.new("UICorner")
+        ApplyProperties(MidBar, {
+            Name = "MidBar",
+            Parent = parent,
+            BackgroundColor3 = Color3_fromRGB(0, 255, 255),
+            Position = UDim2_new(0.25, 0, 0.45, 0),
+            Size = UDim2_new(0.5, 0, 0.1, 0),
+            ZIndex = 102
+        })
+        MBCorner.CornerRadius = UDim.new(1, 0)
+        MBCorner.Parent = MidBar
+
+        -- 裝飾點
+        local Dot = Instance.new("Frame")
+        local DotCorner = Instance.new("UICorner")
+        ApplyProperties(Dot, {
+            Name = "Dot",
+            Parent = parent,
+            BackgroundColor3 = Color3_fromRGB(255, 255, 255),
+            Position = UDim2_new(0.425, 0, 0.1, 0),
+            Size = UDim2_new(0.15, 0, 0.15, 0),
+            ZIndex = 103
+        })
+        DotCorner.CornerRadius = UDim.new(1, 0)
+        DotCorner.Parent = Dot
+
+        return {LeftBar, RightBar, MidBar, Dot}
+    end
+
+    local IconParts = CreateTechIcon(IconContainer)
 
     -- 科幻裝飾圈
     local OrbitFrame = Instance.new("Frame")
@@ -152,17 +214,25 @@ function GuiModule.CreateMainGui()
         Parent = ToggleButton
     })
 
-    -- 呼吸效果動畫
+    -- 呼吸效果與動態圖標動畫
     task_spawn(function()
         while ScreenGui and ScreenGui.Parent do
             if ToggleButton.Visible then
-                for i = 0, 1, 0.05 do
-                    if not ToggleButton.Visible then break end
-                    local transparency = 0.4 + (math.sin(tick() * 2) * 0.2)
-                    ToggleStroke.Transparency = transparency
-                    LogoImage.ImageTransparency = transparency - 0.2
-                    task.wait(0.05)
+                local tickTime = tick()
+                local transparency = 0.4 + (math.sin(tickTime * 2) * 0.2)
+                local glowScale = 1 + (math.sin(tickTime * 4) * 0.1)
+                
+                ToggleStroke.Transparency = transparency
+                
+                -- 圖標動態效果
+                for i, part in ipairs(IconParts) do
+                    part.BackgroundTransparency = transparency - 0.2
+                    if part.Name == "MidBar" then
+                        part.Size = UDim2_new(0.5, 0, 0.1 * glowScale, 0)
+                    end
                 end
+                
+                task.wait(0.05)
             end
             task.wait(0.1)
         end

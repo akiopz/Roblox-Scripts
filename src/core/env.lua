@@ -53,16 +53,16 @@ local function GetEnvironment()
         identifyexecutor = g.identifyexecutor or g.getexecutorname or function() return "Unknown Executor" end,
         
         -- File System APIs
-        writefile = g.writefile or function() warn("Executor does not support writefile") end,
-        readfile = g.readfile or function() return "" end,
-        isfile = g.isfile or function() return false end,
-        listfiles = g.listfiles or function() return {} end,
-        makefolder = g.makefolder or function() end,
+        writefile = g.writefile or function(...) warn("Executor does not support writefile") end,
+        readfile = g.readfile or function(...) return "" end,
+        isfile = g.isfile or function(...) return false end,
+        listfiles = g.listfiles or function(...) return {} end,
+        makefolder = g.makefolder or function(...) end,
         
         -- Interaction APIs
-        fireclickdetector = g.fireclickdetector or function() end,
-        fireproximityprompt = g.fireproximityprompt or function() end,
-        firetouchinterest = g.firetouchinterest or function() end,
+        fireclickdetector = g.fireclickdetector or function(...) end,
+        fireproximityprompt = g.fireproximityprompt or function(...) end,
+        firetouchinterest = g.firetouchinterest or function(...) end,
         
         -- Clipboard APIs
         setclipboard = g.setclipboard or g.toclipboard or function() end,
@@ -71,6 +71,60 @@ local function GetEnvironment()
         -- Asset APIs
         getcustomasset = g.getcustomasset or function() return "" end
     }
+    
+    -- 增加設置存取功能
+    function e.SaveSettings(name, data)
+        local success, json = pcall(function() 
+            -- 處理 Vector3/Color3 等無法直接編碼的類型
+            local cleanData = {}
+            for k, v in pairs(data) do
+                if typeof(v) == "Vector3" then
+                    cleanData[k] = {type = "Vector3", x = v.X, y = v.Y, z = v.Z}
+                elseif typeof(v) == "Color3" then
+                    cleanData[k] = {type = "Color3", r = v.R, g = v.G, b = v.B}
+                elseif typeof(v) == "UDim2" then
+                    cleanData[k] = {type = "UDim2", xs = v.X.Scale, xo = v.X.Offset, ys = v.Y.Scale, yo = v.Y.Offset}
+                else
+                    cleanData[k] = v
+                end
+            end
+            return HttpService:JSONEncode(cleanData) 
+        end)
+        if success then
+            pcall(function() e.writefile(name .. ".json", json) end)
+        end
+    end
+
+    function e.LoadSettings(name)
+        if e.isfile(name .. ".json") then
+            local success, content = pcall(function() return e.readfile(name .. ".json") end)
+            if success then
+                local success2, data = pcall(function() 
+                    local decoded = HttpService:JSONDecode(content)
+                    local finalData = {}
+                    for k, v in pairs(decoded) do
+                        if type(v) == "table" and v.type then
+                            if v.type == "Vector3" then
+                                finalData[k] = Vector3.new(v.x, v.y, v.z)
+                            elseif v.type == "Color3" then
+                                finalData[k] = Color3.new(v.r, v.g, v.b)
+                            elseif v.type == "UDim2" then
+                                finalData[k] = UDim2.new(v.xs, v.xo, v.ys, v.yo)
+                            else
+                                finalData[k] = v
+                            end
+                        else
+                            finalData[k] = v
+                        end
+                    end
+                    return finalData
+                end)
+                if success2 then return data end
+            end
+        end
+        return nil
+    end
+
     return e
 end
 

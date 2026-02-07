@@ -17,6 +17,15 @@ local GuiUtils = {}
 
 function GuiUtils.Init(Gui)
     local Tabs = {}
+    local ScriptStates = {} -- 用於存儲腳本狀態，方便保存
+    local Keybinds = {} -- 用於存儲快捷鍵設置
+    
+    -- 加載保存的設置
+    if Gui.env and Gui.env.LoadSettings then
+        local saved = Gui.env.LoadSettings("CatV4_Settings") or {}
+        ScriptStates = saved.States or {}
+        Keybinds = saved.Keybinds or {}
+    end
     
     function GuiUtils.CreateTab(name)
         local TabButton = Instance.new("TextButton")
@@ -165,7 +174,64 @@ function GuiUtils.Init(Gui)
             Active = false -- 不攔截父按鈕點擊
         })
 
-        local active = defaultState or false
+        local KeyLabel = Instance.new("TextLabel")
+        Gui.ApplyProperties(KeyLabel, {
+            Size = UDim2_new(0, 60, 0, 20),
+            Position = UDim2_new(1, -65, 0, 8),
+            BackgroundTransparency = 0.8,
+            BackgroundColor3 = Color3_fromRGB(0, 0, 0),
+            Font = Enum_Font.Code,
+            Text = Keybinds[name] or "[NONE]",
+            TextColor3 = Color3_fromRGB(0, 200, 200),
+            TextSize = 10,
+            Parent = Button,
+            ZIndex = 22
+        })
+        Gui.ApplyProperties(Instance.new("UICorner"), { CornerRadius = UDim.new(0, 4), Parent = KeyLabel })
+
+        local isBinding = false
+        Gui.SafeConnect(Button.MouseButton2Click, function()
+            if isBinding then return end
+            isBinding = true
+            KeyLabel.Text = "[...]"
+            KeyLabel.TextColor3 = Color3_fromRGB(255, 255, 0)
+            
+            local connection
+            connection = game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+                if gpe then return end
+                if input.UserInputType == Enum.UserInputType.Keyboard then
+                    local key = input.KeyCode.Name
+                    if key == "Escape" or key == "Backspace" then
+                        key = nil
+                    end
+                    
+                    Keybinds[name] = key
+                    KeyLabel.Text = key or "[NONE]"
+                    KeyLabel.TextColor3 = Color3_fromRGB(0, 200, 200)
+                    
+                    if Gui.env and Gui.env.SaveSettings then
+                        Gui.env.SaveSettings("CatV4_Settings", {
+                            States = ScriptStates,
+                            Keybinds = Keybinds
+                        })
+                    end
+                    
+                    connection:Disconnect()
+                    task.wait(0.2)
+                    isBinding = false
+                end
+            end)
+        end)
+
+        -- 快捷鍵執行邏輯
+        Gui.SafeConnect(game:GetService("UserInputService").InputBegan, function(input, gpe)
+            if gpe then return end
+            if Keybinds[name] and input.KeyCode.Name == Keybinds[name] then
+                Button:Click() -- 模擬點擊
+            end
+        end)
+
+        local active = (ScriptStates[name] ~= nil and ScriptStates[name]) or (defaultState or false)
         local isProcessing = false
 
         local function UpdateVisuals()
@@ -182,10 +248,24 @@ function GuiUtils.Init(Gui)
                 StatusLight.BackgroundColor3 = Color3_fromRGB(60, 60, 80)
                 DescLabel.TextColor3 = Color3_fromRGB(100, 100, 130)
             end
+            
+            ScriptStates[name] = active
+            
+            -- 自動保存設置
+            if Gui.env and Gui.env.SaveSettings then
+                Gui.env.SaveSettings("CatV4_Settings", {
+                    States = ScriptStates,
+                    Keybinds = Keybinds
+                })
+            end
         end
 
-        if defaultState then
+        if active then
             UpdateVisuals()
+            -- 如果初始狀態為開啟，執行加載函數
+            task.spawn(function()
+                pcall(loadFunc, true)
+            end)
         end
 
         Gui.SafeConnect(Button.MouseButton1Click, function()
@@ -211,7 +291,14 @@ function GuiUtils.Init(Gui)
         targetTab.Page.CanvasSize = UDim2_new(0, 0, 0, targetTab.List.AbsoluteContentSize.Y + 20)
     end
 
-    return GuiUtils
+    return {
+        CreateTab = GuiUtils.CreateTab,
+        AddScript = GuiUtils.AddScript,
+        GetStates = function() return ScriptStates end,
+        SetStates = function(states) 
+            ScriptStates = states or {}
+        end
+    }
 end
 
 return GuiUtils
