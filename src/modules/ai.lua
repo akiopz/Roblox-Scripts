@@ -99,26 +99,38 @@ function AIModule.Init(CatFunctions, Blatant)
                             local targetPos = target.part.Position
                             local dist = (hrp.Position - targetPos).Magnitude
                             
+                            if target.type == "BED" and dist > 15 then
+                                if not _G.Fly then CatFunctions.ToggleFly(true) end
+                            elseif _G.Fly and dist < 5 then
+                                CatFunctions.ToggleFly(false)
+                            end
+
                             if dist > 4 then
                                 local moveDir = (targetPos - hrp.Position).Unit
-                                moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
                                 
-                                if dist > 15 then
-                                    local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
-                                    local success = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
-                                    if success and path.Status == Enum.PathStatus.Success then
-                                        local waypoints = path:GetWaypoints()
-                                        if #waypoints > 1 then
-                                            moveDir = (waypoints[2].Position - hrp.Position).Unit
-                                            moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
-                                            if waypoints[2].Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                                if _G.Fly then
+                                    hum:Move(moveDir, true)
+                                    hum:MoveTo(targetPos)
+                                else
+                                    moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
+                                    
+                                    if dist > 15 then
+                                        local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
+                                        local success = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
+                                        if success and path.Status == Enum.PathStatus.Success then
+                                            local waypoints = path:GetWaypoints()
+                                            if #waypoints > 1 then
+                                                moveDir = (waypoints[2].Position - hrp.Position).Unit
+                                                moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit
+                                                if waypoints[2].Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                                            end
                                         end
                                     end
-                                end
 
-                                if hum then
-                                    hum:Move(moveDir, true)
-                                    hum:MoveTo(hrp.Position + moveDir * 5)
+                                    if hum then
+                                        hum:Move(moveDir, true)
+                                        hum:MoveTo(hrp.Position + moveDir * 5)
+                                    end
                                 end
                                 
                                 local ray = Ray.new(hrp.Position, moveDir * 3)
@@ -222,34 +234,49 @@ function AIModule.Init(CatFunctions, Blatant)
                         end
 
                         if target then
-                            local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
-                            local success, errorMessage = pcall(function()
-                                path:ComputeAsync(hrp.Position, target.part.Position)
-                            end)
+                            local targetPos = target.part.Position
+                            local dist = (hrp.Position - targetPos).Magnitude
 
-                            if success and path.Status == Enum.PathStatus.Success then
-                                local waypoints = path:GetWaypoints()
-                                if #waypoints > 1 then
-                                    local nextWaypoint = waypoints[2]
-                                    local moveDir = (nextWaypoint.Position - hrp.Position).Unit
+                            if target.type == "BED" and dist > 15 then
+                                if not _G.Fly then CatFunctions.ToggleFly(true) end
+                            elseif _G.Fly and dist < 5 then
+                                CatFunctions.ToggleFly(false)
+                            end
+
+                            if _G.Fly then
+                                local moveDir = (targetPos - hrp.Position).Unit
+                                hum:Move(moveDir, true)
+                                hum:MoveTo(targetPos)
+                            else
+                                local path = PathfindingService:CreatePath({AgentHeight = 5, AgentRadius = 2, AgentCanJump = true, WaypointSpacing = 4})
+                                local success, errorMessage = pcall(function()
+                                    path:ComputeAsync(hrp.Position, targetPos)
+                                end)
+
+                                if success and path.Status == Enum.PathStatus.Success then
+                                    local waypoints = path:GetWaypoints()
+                                    if #waypoints > 1 then
+                                        local nextWaypoint = waypoints[2]
+                                        local moveDir = (nextWaypoint.Position - hrp.Position).Unit
+                                        moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit -- Flatten movement
+                                        hum:Move(moveDir, true)
+                                        hum:MoveTo(nextWaypoint.Position)
+                                        
+                                        if nextWaypoint.Action == Enum.PathWaypointAction.Jump then
+                                            hum.Jump = true
+                                        end
+
+                                        if target.type == "PLAYER" then
+                                            hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(target.part.Position.X, hrp.Position.Y, target.part.Position.Z))
+                                            _G.KillAuraTarget = target.part.Parent
+                                        end
+                                    end
+                                else
+                                    local moveDir = (targetPos - hrp.Position).Unit
                                     moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit -- Flatten movement
                                     hum:Move(moveDir, true)
-                                    hum:MoveTo(nextWaypoint.Position)
-                                    
-                                    if nextWaypoint.Action == Enum.PathWaypointAction.Jump then
-                                        hum.Jump = true
-                                    end
-
-                                    if target.type == "PLAYER" then
-                                        hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(target.part.Position.X, hrp.Position.Y, target.part.Position.Z))
-                                        _G.KillAuraTarget = target.part.Parent
-                                    end
+                                    hum:MoveTo(targetPos)
                                 end
-                            else
-                                local moveDir = (target.part.Position - hrp.Position).Unit
-                                moveDir = Vector3_new(moveDir.X, 0, moveDir.Z).Unit -- Flatten movement
-                                hum:Move(moveDir, true)
-                                hum:MoveTo(target.part.Position)
                             end
 
                             if hrp.Position.Y < 0 then
