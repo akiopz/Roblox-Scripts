@@ -1,5 +1,17 @@
--- Halol (V4.0) AI 模組
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local workspace = workspace or getgenv().workspace
+local task = task or getgenv().task
+local Vector3 = Vector3 or getgenv().Vector3
+local CFrame = CFrame or getgenv().CFrame
+local Ray = Ray or getgenv().Ray
+local Enum = Enum or getgenv().Enum
+local math = math or getgenv().math
+local ipairs = ipairs or getgenv().ipairs
+local pairs = pairs or getgenv().pairs
+local pcall = pcall or getgenv().pcall
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PathfindingService = game:GetService("PathfindingService")
@@ -12,7 +24,6 @@ local CFrame_new = CFrame.new
 local AIModule = {}
 
 function AIModule.Init(CatFunctions, Blatant)
-    -- God Mode AI
     local function ToggleGodMode(state)
         _G.GodModeAI = state
         if _G.GodModeAI then
@@ -44,15 +55,12 @@ function AIModule.Init(CatFunctions, Blatant)
                         if battlefield.nearestThreat and battlefield.nearestThreat.dist < 15 then
                             target = {part = battlefield.nearestThreat.hrp, type = "PLAYER"}
                         else
-                            for _, v in ipairs(workspace:GetDescendants()) do
-                                if v.Name == "bed" and v:IsA("BasePart") then
-                                    local team = v:GetAttribute("Team")
+                            if #battlefield.beds > 0 then
+                                for _, bed in ipairs(battlefield.beds) do
+                                    local team = bed.part:GetAttribute("Team")
                                     if team ~= lp.Team then
-                                        local dist = (hrp.Position - v.Position).Magnitude
-                                        if dist < minDist then
-                                            minDist = dist
-                                            target = {part = v, type = "BED"}
-                                        end
+                                        target = {part = bed.part, type = "BED"}
+                                        break
                                     end
                                 end
                             end
@@ -65,14 +73,12 @@ function AIModule.Init(CatFunctions, Blatant)
                             local targetPos = target.part.Position
                             local dist = (hrp.Position - targetPos).Magnitude
                             
-                            -- 基礎移動邏輯：如果距離 > 4，則朝向目標移動
                             if dist > 4 then
                                 local moveDir = (targetPos - hrp.Position).Unit
                                 if hum then
                                     hum:Move(moveDir, true)
                                 end
                                 
-                                -- 遇到障礙物自動跳躍
                                 local ray = Ray.new(hrp.Position, moveDir * 3)
                                 local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
                                 if hit and hit.CanCollide then
@@ -82,10 +88,9 @@ function AIModule.Init(CatFunctions, Blatant)
                                 if hum then hum:Move(Vector3_new(0,0,0), true) end
                             end
 
-                            -- 強制 KillAura 攻擊當前目標 (如果是玩家)
                             if target.type == "PLAYER" and _G.KillAura then
-                                -- 確保看向目標以便攻擊
                                 hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(targetPos.X, hrp.Position.Y, targetPos.Z))
+                                _G.KillAuraTarget = target.part.Parent
                             end
                         else
                             if hum then hum:Move(Vector3_new(0,0,0), true) end
@@ -96,7 +101,6 @@ function AIModule.Init(CatFunctions, Blatant)
         end
     end
 
-    -- Auto Play AI (基礎 Pathfinding 實作)
     local function ToggleAutoPlay(state)
         _G.AI_Enabled = state
         if _G.AI_Enabled then
@@ -105,7 +109,7 @@ function AIModule.Init(CatFunctions, Blatant)
             CatFunctions.ToggleKillAura(true)
             CatFunctions.ToggleNoFall(true)
             CatFunctions.ToggleAutoToolFastBreak(true)
-            CatFunctions.ToggleSpeed(true) -- 開啟速度以利追擊
+            CatFunctions.ToggleSpeed(true)
             _G.AutoBuyPro = true
             _G.AutoArmor = true
             Blatant.ToggleAutoBuyPro(true)
@@ -120,12 +124,6 @@ function AIModule.Init(CatFunctions, Blatant)
                         local battlefield = CatFunctions.GetBattlefieldState()
                         local target = nil
                         
-                        -- 優先級：
-                        -- 1. 附近的資源 (如果距離小於 15，優先撿取)
-                        -- 2. 最近的威脅 (玩家)
-                        -- 3. 遠處的資源 (鑽石/綠寶石優先)
-                        -- 4. 敵方床位
-                        
                         local nearResource = nil
                         for _, res in ipairs(battlefield.resources) do
                             if res.dist < 15 then
@@ -136,7 +134,6 @@ function AIModule.Init(CatFunctions, Blatant)
 
                         if nearResource then
                              target = {part = nearResource.part, type = "RESOURCE"}
-                             -- 如果已經很近了，稍微停一下確保收集到
                              if nearResource.dist < 5 then
                                  hum:Move(Vector3_new(0,0,0), true)
                                  task_wait(0.5)
@@ -144,7 +141,6 @@ function AIModule.Init(CatFunctions, Blatant)
                         elseif battlefield.nearestThreat and battlefield.nearestThreat.dist < 60 then
                             target = {part = battlefield.nearestThreat.hrp, type = "PLAYER"}
                         elseif #battlefield.resources > 0 then
-                            -- 優先尋找鑽石或綠寶石
                             local bestRes = battlefield.resources[1]
                             for _, res in ipairs(battlefield.resources) do
                                 local name = res.name:lower()
@@ -154,15 +150,12 @@ function AIModule.Init(CatFunctions, Blatant)
                                 end
                             end
                             target = {part = bestRes.part, type = "RESOURCE"}
-                        else
-                            -- 尋找敵方床位
-                            for _, v in ipairs(workspace:GetDescendants()) do
-                                if v.Name == "bed" and v:IsA("BasePart") then
-                                    local team = v:GetAttribute("Team")
-                                    if team ~= lp.Team then
-                                        target = {part = v, type = "BED"}
-                                        break
-                                    end
+                        elseif #battlefield.beds > 0 then
+                            for _, bed in ipairs(battlefield.beds) do
+                                local team = bed.part:GetAttribute("Team")
+                                if team ~= lp.Team then
+                                    target = {part = bed.part, type = "BED"}
+                                    break
                                 end
                             end
                         end
@@ -184,22 +177,19 @@ function AIModule.Init(CatFunctions, Blatant)
                                         hum.Jump = true
                                     end
 
-                                    -- 如果是戰鬥狀態，強制看向目標
                                     if target.type == "PLAYER" then
                                         hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(target.part.Position.X, hrp.Position.Y, target.part.Position.Z))
+                                        _G.KillAuraTarget = target.part.Parent
                                     end
                                 end
                             else
-                                -- Pathfinding 失敗時使用基礎移動
                                 local moveDir = (target.part.Position - hrp.Position).Unit
                                 hum:Move(moveDir, true)
                             end
 
-                            -- 防掉落 AI 回歸邏輯 (Anti-Void AI)
-                            if hrp.Position.Y < 0 then -- 假設 0 以下是虛空
+                            if hrp.Position.Y < 0 then
                                 local spawnPos = lp.RespawnLocation and lp.RespawnLocation.Position or Vector3_new(0, 100, 0)
                                 if (hrp.Position - spawnPos).Magnitude > 50 then
-                                    -- 如果掉下去了，嘗試開啟飛行或直接傳送回出生點 (如果功能允許)
                                     if CatFunctions.ToggleFly then
                                         CatFunctions.ToggleFly(true)
                                         hrp.Velocity = Vector3_new(0, 50, 0)

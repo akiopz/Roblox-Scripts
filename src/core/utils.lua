@@ -1,5 +1,14 @@
--- Halol (V4.0) GUI 工具模組 (用於添加按鈕與分頁)
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local Color3 = Color3 or getgenv().Color3
+local UDim2 = UDim2 or getgenv().UDim2
+local UDim = UDim or getgenv().UDim
+local Enum = Enum or getgenv().Enum
+local Instance = Instance or getgenv().Instance
+local task = task or getgenv().task
+local pairs = pairs or getgenv().pairs
+local pcall = pcall or getgenv().pcall
+
 local Color3_fromRGB = Color3.fromRGB
 local UDim2_new = UDim2.new
 local Enum_Font = Enum.Font

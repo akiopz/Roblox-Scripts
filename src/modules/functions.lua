@@ -1,793 +1,322 @@
--- Halol (V4.0) 功能模組
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local workspace = workspace or getgenv().workspace
+local task = task or getgenv().task
+local Vector3 = Vector3 or getgenv().Vector3
+local Ray = Ray or getgenv().Ray
+local math = math or getgenv().math
+local tick = tick or getgenv().tick or os.time
+local pairs = pairs or getgenv().pairs
+local ipairs = ipairs or getgenv().ipairs
+local table = table or getgenv().table
+local string = string or getgenv().string
+local pcall = pcall or getgenv().pcall
+
+local functionsModule = {}
+
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local lp = Players.LocalPlayer
-local task_spawn = task.spawn
-local task_wait = task.wait
+local TweenService = game:GetService("TweenService")
+local lplr = Players.LocalPlayer
 local Vector3_new = Vector3.new
-local CFrame_new = CFrame.new
 
-local FunctionsModule = {}
-
-function FunctionsModule.Init(env)
-    local task_wait = env.task_wait
-    local math_random = env.math_random
-    local math_floor = env.math_floor
-
+function functionsModule.Init(env)
     local CatFunctions = {}
-    _G.CatFunctions = CatFunctions
+    local Notify = env.Notify
 
-    -- KillAura (繞過強化版)
     CatFunctions.ToggleKillAura = function(state)
-        if state == nil then _G.KillAura = not _G.KillAura else _G.KillAura = state end
-        if _G.KillAura then
-            task_spawn(function()
-                while _G.KillAura do
-                    -- 隨機化攻擊延遲 (CPS 模擬)
-                    local cps = _G.KillAuraCPS or math.random(8, 12)
-                    task_wait(1 / cps)
-                    
-                    local loop_success, loop_err = pcall(function()
-                        local char = lp.Character
-                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                        if not hrp then return end
-                        
-                        local maxDist = _G.KillAuraRange or 22
-                        local targets = {}
-                        
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player ~= lp and player.Team ~= lp.Team and player.Character then
-                                local ehum = player.Character:FindFirstChildOfClass("Humanoid")
-                                local ehrp = player.Character:FindFirstChild("HumanoidRootPart")
-                                if ehum and ehum.Health > 0 and ehrp then
-                                    -- 增加動態預測
-                                    local ping = 0.1 -- 假設延遲
-                                    local predictedPos = ehrp.Position + (ehrp.Velocity * ping)
-                                    local dist = (hrp.Position - predictedPos).Magnitude
-                                    
-                                    if dist < maxDist then
-                                        table.insert(targets, player)
-                                    end
-                                end
-                            end
-                        end
-
-                        if #targets > 0 then
-                            table.sort(targets, function(a, b)
-                                return (hrp.Position - a.Character.HumanoidRootPart.Position).Magnitude < (hrp.Position - b.Character.HumanoidRootPart.Position).Magnitude
-                            end)
-                            
-                            local maxTargets = _G.KillAuraMaxTargets or 3
-                            for i = 1, math.min(#targets, maxTargets) do
-                                local targetChar = targets[i].Character
-                                local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
-                                
-                                -- 模擬視線看向目標 (可選繞過)
-                                if _G.KillAuraFaceTarget and i == 1 then
-                                    hrp.CFrame = CFrame_new(hrp.Position, Vector3_new(targetHrp.Position.X, hrp.Position.Y, targetHrp.Position.Z))
-                                end
-
-                                local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or ReplicatedStorage:FindFirstChild("CombatEvents", true)
-                                if remote and remote:IsA("RemoteEvent") then
-                                    -- Bedwars 專用遠端調用優化
-                                    remote:FireServer({
-                                        ["entity"] = targetChar,
-                                        ["weapon"] = char:FindFirstChildOfClass("Tool"),
-                                        ["hitPosition"] = targetHrp.Position + Vector3_new(math.random(-1,1)/10, math.random(-1,1)/10, math.random(-1,1)/10)
-                                    })
-                                else
-                                    local tool = char:FindFirstChildOfClass("Tool")
-                                    if tool then tool:Activate() end
-                                end
-                            end
-                        end
-                    end)
+        _G.KillAura = state
+        if not _G.KillAura then return end
+        task.spawn(function()
+            while _G.KillAura and task.wait() do
+                local target = _G.KillAuraTarget or nil
+                if target and target:FindFirstChild("Humanoid") and target.Humanoid.Health > 0 then
+                    local hrp = target:FindFirstChild("HumanoidRootPart")
+                    if hrp and (lplr.Character.HumanoidRootPart.Position - hrp.Position).Magnitude > (_G.KillAuraRange or 18) then
+                        target = nil
+                    end
+                else
+                    target = nil
                 end
-            end)
-        end
-        return _G.KillAura
-    end
 
-    -- AutoBridge
-    CatFunctions.ToggleAutoBridge = function(state)
-        if state == nil then _G.AutoBridge = not _G.AutoBridge else _G.AutoBridge = state end
-        if _G.AutoBridge then
-            task_spawn(function()
-                while _G.AutoBridge and task_wait(0.05) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
-                        local block = char:FindFirstChildOfClass("Tool")
-                        if block and (block.Name:lower():find("block") or block.Name:lower():find("item")) then
-                            local pos = hrp.Position + (hum.MoveDirection * 2.5) + Vector3_new(0, -3.6, 0)
-                            local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true)
-                            if remote then remote:FireServer({["position"] = pos, ["block"] = block.Name}) end
+                if not target then
+                    local dist = _G.KillAuraRange or 18
+                    for _, v in pairs(Players:GetPlayers()) do
+                        if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                            local d = (lplr.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+                            if d < dist then
+                                target = v.Character
+                                dist = d
+                            end
                         end
                     end
                 end
-            end)
-        end
-        return _G.AutoBridge
+
+                if target then
+                    local delay = math.random(8, 12) / 100
+                    task.wait(delay)
+                    local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or 
+                                   ReplicatedStorage:FindFirstChild("CombatRemote", true)
+                    if remote then
+                        remote:FireServer({["entity"] = target})
+                    end
+                end
+            end
+        end)
     end
 
-    -- Scaffold (高級架橋)
     CatFunctions.ToggleScaffold = function(state)
-        if state == nil then _G.ScaffoldEnabled = not _G.ScaffoldEnabled else _G.ScaffoldEnabled = state end
-        if _G.ScaffoldEnabled then
-            task_spawn(function()
-                while _G.ScaffoldEnabled and task_wait(0.01) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local blockName = nil
-                        for _, v in ipairs(lp.Backpack:GetChildren()) do
-                            if v.Name:lower():find("block") or v.Name:lower():find("wool") then
-                                blockName = v.Name
-                                break
-                            end
-                        end
-                        if not blockName and char:FindFirstChildOfClass("Tool") then
-                            local tool = char:FindFirstChildOfClass("Tool")
-                            if tool.Name:lower():find("block") or tool.Name:lower():find("wool") then
-                                blockName = tool.Name
-                            end
-                        end
-
-                        if blockName then
-                            local pos = hrp.Position + Vector3_new(0, -5, 0)
-                            local roundedPos = Vector3_new(math_floor(pos.X / 3 + 0.5) * 3, math_floor(pos.Y / 3 + 0.5) * 3, math_floor(pos.Z / 3 + 0.5) * 3)
-                            local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true)
-                            if remote then
-                                remote:FireServer({["position"] = roundedPos, ["block"] = blockName})
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.ScaffoldEnabled
-    end
-
-    -- AutoToolFastBreak
-    CatFunctions.ToggleAutoToolFastBreak = function(state)
-        if state == nil then _G.AutoToolFB = not _G.AutoToolFB else _G.AutoToolFB = state end
-        if _G.AutoToolFB then
-            task_spawn(function()
-                while _G.AutoToolFB and task_wait(0.05) do
-                    local char = lp.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp and hum then
-                        -- 自動破床 (Auto Target Break)
-                        if _G.AutoTargetBreak then
-                            for _, v in ipairs(workspace:GetDescendants()) do
-                                if v.Name == "target" and v:IsA("BasePart") then
-                                    local team = v:GetAttribute("Team")
-                                    if team ~= lp.Team and (hrp.Position - v.Position).Magnitude < 25 then
-                                        local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or ReplicatedStorage:FindFirstChild("HitBlock", true)
-                                        if remote then remote:FireServer({["position"] = v.Position, ["block"] = v.Name}) end
-                                    end
-                                end
-                            end
-                        end
-                        
-                        local target = lp:GetMouse().Target
-                        if target and target:IsA("BasePart") and (hrp.Position - target.Position).Magnitude < 25 then
-                            local blockName = target.Name:lower()
-                            local bestToolName = nil
-                            if blockName:find("target") or blockName:find("item") then
-                                bestToolName = "shears"
-                            elseif blockName:find("wood") or blockName:find("plank") then
-                                bestToolName = "axe"
-                            elseif blockName:find("stone") or blockName:find("ore") or blockName:find("ceramic") then
-                                bestToolName = "pickaxe"
-                            end
-                            if bestToolName then
-                                local tool = lp.Backpack:FindFirstChild(bestToolName, true) or char:FindFirstChild(bestToolName, true)
-                                if tool and tool.Parent ~= char then hum:EquipTool(tool) end
-                            end
-                            local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or ReplicatedStorage:FindFirstChild("HitBlock", true)
-                            if remote then remote:FireServer({["position"] = target.Position, ["block"] = target.Name}) end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.AutoToolFB
-    end
-
-    -- NoFall (繞過強化版)
-    CatFunctions.ToggleNoFall = function(state)
-        if state == nil then _G.NoFall = not _G.NoFall else _G.NoFall = state end
-        if _G.NoFall then
-            task_spawn(function()
-                while _G.NoFall and task_wait(0.1) do
-                    local char = lp.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        -- 繞過方式 1: 定期發送 0 傷害遠端 (基礎)
-                        local remote = ReplicatedStorage:FindFirstChild("FallDamage", true)
-                        if remote and remote:IsA("RemoteEvent") then remote:FireServer(0) end
-                        
-                        -- 繞過方式 2: 模擬接地狀態 (進階)
-                        if hum:GetState() == Enum.HumanoidStateType.Freefall then
-                            -- 在即將落地時短暫切換狀態
-                            -- 注意: 這可能需要 Raycast 檢測高度
-                            local hrp = char:FindFirstChild("HumanoidRootPart")
-                            if hrp then
-                                local ray = Ray.new(hrp.Position, Vector3_new(0, -10, 0))
-                                local part, pos = workspace:FindPartOnRay(ray, char)
-                                if part then
-                                    hum:ChangeState(Enum.HumanoidStateType.Landed)
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.NoFall
-    end
-
-    -- Reach
-    CatFunctions.ToggleReach = function(state)
-        if state == nil then _G.ReachEnabled = not _G.ReachEnabled else _G.ReachEnabled = state end
-        if _G.ReachEnabled then
-            task_spawn(function()
-                while _G.ReachEnabled do
-                    pcall(function()
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player ~= lp and player.Character then
-                                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                                if root then
-                                    local dist = (lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") and (lp.Character.HumanoidRootPart.Position - root.Position).Magnitude) or 100
-                                    local targetSize = (dist < 30) and Vector3_new(15, 15, 15) or Vector3_new(2, 2, 2)
-                                    root.Size = targetSize
-                                    root.Transparency = 0.7
-                                    root.CanCollide = false
-                                end
-                            end
-                        end
-                    end)
-                    task_wait(0.5)
-                end
-                for _, player in ipairs(Players:GetPlayers()) do
-                    if player.Character then
-                        local root = player.Character:FindFirstChild("HumanoidRootPart")
-                        if root then
-                            root.Size = Vector3_new(2, 2, 2)
-                            root.Transparency = 1
-                            root.CanCollide = true
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.ReachEnabled
-    end
-
-    -- Auto Resource Farm
-    CatFunctions.ToggleAutoResourceFarm = function(state)
-        if state == nil then _G.AutoResourceFarm = not _G.AutoResourceFarm else _G.AutoResourceFarm = state end
-        if _G.AutoResourceFarm then
-            task_spawn(function()
-                while _G.AutoResourceFarm and task_wait(1) do
-                    local battlefield = CatFunctions.GetBattlefieldState()
-                    if #battlefield.resources > 0 then
-                        local char = lp.Character
-                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            hrp.CFrame = battlefield.resources[1].part.CFrame + Vector3_new(0, 3, 0)
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.AutoResourceFarm
-    end
-
-    -- Velocity (Anti-Knockback 繞過版)
-    CatFunctions.ToggleVelocity = function(state)
-        if state == nil then _G.VelocityEnabled = not _G.VelocityEnabled else _G.VelocityEnabled = state end
-        if _G.VelocityEnabled then
-            task_spawn(function()
-                while _G.VelocityEnabled and task_wait(0.1) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        -- 繞過建議: 不要設為 0，設為 10-20% 以模擬物理效果
-                        local horizontal = _G.VelocityHorizontal or 15
-                        local vertical = _G.VelocityVertical or 100
-                        hrp.Velocity = Vector3_new(hrp.Velocity.X * (horizontal / 100), hrp.Velocity.Y * (vertical / 100), hrp.Velocity.Z * (horizontal / 100))
-                    end
-                end
-            end)
-        end
-        return _G.VelocityEnabled
-    end
-
-    -- NoClickDelay (無連點延遲)
-    CatFunctions.ToggleNoClickDelay = function(state)
-        if state == nil then _G.NoClickDelay = not _G.NoClickDelay else _G.NoClickDelay = state end
-        if _G.NoClickDelay then
-            Notify("無連點延遲", "已優化攻擊速度！", 2)
-        end
-        return _G.NoClickDelay
-    end
-
-    -- Auto Kit Ability (自動套裝能力)
-    CatFunctions.ToggleAutoKitAbility = function(state)
-        if state == nil then _G.AutoKitAbility = not _G.AutoKitAbility else _G.AutoKitAbility = state end
-        if _G.AutoKitAbility then
-            task_spawn(function()
-                while _G.AutoKitAbility and task_wait(1) do
-                    local remote = ReplicatedStorage:FindFirstChild("UseKitAbility", true) or 
-                                   ReplicatedStorage:FindFirstChild("ActivateAbility", true)
-                    if remote then remote:FireServer() end
-                end
-            end)
-        end
-        return _G.AutoKitAbility
-    end
-
-    -- Auto Sprint
-    CatFunctions.ToggleAutoSprint = function(state)
-        if state == nil then _G.AutoSprint = not _G.AutoSprint else _G.AutoSprint = state end
-        if _G.AutoSprint then
-            task_spawn(function()
-                while _G.AutoSprint and task_wait(0.5) do
-                    local char = lp.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.MoveDirection.Magnitude > 0 then
-                        -- 這裡調用 Bedwars 內部的 Sprint 遠程或簡單修改屬性
-                        -- 具體視遊戲版本而定，通常修改 WalkSpeed 即可
-                        hum.WalkSpeed = (_G.CustomWalkSpeed or 16) * 1.3
-                    end
-                end
-            end)
-        end
-        return _G.AutoSprint
-    end
-
-    -- Speed (高級繞過版)
-    CatFunctions.ToggleSpeed = function(state)
-        if state == nil then _G.SpeedEnabled = not _G.SpeedEnabled else _G.SpeedEnabled = state end
-        if _G.SpeedEnabled then
-            task_spawn(function()
-                local count = 0
-                while _G.SpeedEnabled and task_wait() do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
-                        count = count + 1
-                        -- 脈衝式移動繞過 (每 3 幀給予一次爆發)
-                        local speed = _G.SpeedValue or 23
-                        local multiplier = (count % 3 == 0) and 1.5 or 0.8
-                        local velo = hum.MoveDirection * (speed * multiplier)
-                        hrp.Velocity = Vector3_new(velo.X, hrp.Velocity.Y, velo.Z)
-                    end
-                end
-            end)
-        end
-        return _G.SpeedEnabled
-    end
-
-    -- Fly (高級繞過版)
-    CatFunctions.ToggleFly = function(state)
-        if state == nil then _G.FlyEnabled = not _G.FlyEnabled else _G.FlyEnabled = state end
-        if _G.FlyEnabled then
-            task_spawn(function()
-                local UIS = game:GetService("UserInputService")
-                local bv = Instance.new("BodyVelocity")
-                bv.MaxForce = Vector3_new(1e6, 1e6, 1e6)
-                bv.Velocity = Vector3_new(0, 0, 0)
-                
-                local hoverTick = 0
-                while _G.FlyEnabled and task_wait() do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum then
-                        bv.Parent = hrp
-                        hoverTick = hoverTick + 0.1
-                        -- 增加垂直微小震盪以模擬物理 (繞過靜止飛行檢測)
-                        local hover = math.sin(hoverTick) * 0.5
-                        
-                        local moveDir = hum.MoveDirection
-                        local up = UIS:IsKeyDown(Enum.KeyCode.Space) and 1 or (UIS:IsKeyDown(Enum.KeyCode.LeftShift) and -1 or 0)
-                        
-                        local flySpeed = _G.FlySpeed or 50
-                        bv.Velocity = (moveDir * flySpeed) + Vector3_new(0, (up * flySpeed) + hover, 0)
-                    else
-                        bv.Parent = nil
-                    end
-                end
-                bv:Destroy()
-            end)
-        end
-        return _G.FlyEnabled
-    end
-
-    -- Auto Clicker (自動連點)
-    CatFunctions.ToggleAutoClicker = function(state)
-        if state == nil then _G.AutoClicker = not _G.AutoClicker else _G.AutoClicker = state end
-        if _G.AutoClicker then
-            task_spawn(function()
-                while _G.AutoClicker and task_wait(0.1) do
-                    local char = lp.Character
-                    local tool = char and char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        tool:Activate()
-                    end
-                end
-            end)
-        end
-        return _G.AutoClicker
-    end
-
-    -- CFrame Speed (暴力加速)
-    CatFunctions.ToggleCFrameSpeed = function(state)
-        if state == nil then _G.CFrameSpeed = not _G.CFrameSpeed else _G.CFrameSpeed = state end
-        if _G.CFrameSpeed then
-            task_spawn(function()
-                while _G.CFrameSpeed and task_wait() do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum and hum.MoveDirection.Magnitude > 0 then
-                        local speed = _G.CFrameSpeedValue or 2
-                        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * speed)
-                    end
-                end
-            end)
-        end
-        return _G.CFrameSpeed
-    end
-
-    -- Auto Consume (自動消耗品)
-    CatFunctions.ToggleAutoConsume = function(state)
-        if state == nil then _G.AutoConsume = not _G.AutoConsume else _G.AutoConsume = state end
-        if _G.AutoConsume then
-            task_spawn(function()
-                while _G.AutoConsume and task_wait(1) do
-                    local char = lp.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health < 15 then -- 當生命低於 15 時
-                        for _, v in ipairs(lp.Backpack:GetChildren()) do
-                            if v.Name:lower():find("apple") or v.Name:lower():find("potion") then
-                                local oldTool = char:FindFirstChildOfClass("Tool")
-                                v.Parent = char
-                                v:Activate()
-                                task_wait(0.1)
-                                v.Parent = lp.Backpack
-                                if oldTool then oldTool.Parent = char end
-                                break
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.AutoConsume
-    end
-
-    -- Damage Indicator (傷害顯示)
-    CatFunctions.ToggleDamageIndicator = function(state)
-        if state == nil then _G.DamageIndicator = not _G.DamageIndicator else _G.DamageIndicator = state end
-        if _G.DamageIndicator then
-            local lastHealth = {}
-            task_spawn(function()
-                while _G.DamageIndicator and task_wait(0.1) do
-                    for _, player in ipairs(Players:GetPlayers()) do
-                        if player ~= lp and player.Character and player.Character:FindFirstChild("Humanoid") then
-                            local hum = player.Character.Humanoid
-                            local currentHealth = hum.Health
-                            local pName = player.Name
-                            if lastHealth[pName] and lastHealth[pName] > currentHealth then
-                                local damage = math_floor(lastHealth[pName] - currentHealth)
-                                if damage > 0 then
-                                    -- 顯示傷害數字
-                                    local head = player.Character:FindFirstChild("Head")
-                                    if head then
-                                        task_spawn(function()
-                                            local bg = Instance.new("BillboardGui")
-                                            bg.Size = UDim2_new(0, 100, 0, 50)
-                                            bg.Adornee = head
-                                            bg.AlwaysOnTop = true
-                                            bg.StudsOffset = Vector3_new(math_random(-2, 2), 2, math_random(-2, 2))
-                                            bg.Parent = head
-                                            
-                                            local label = Instance.new("TextLabel")
-                                            label.Size = UDim2_new(1, 0, 1, 0)
-                                            label.BackgroundTransparency = 1
-                                            label.Text = "-" .. tostring(damage)
-                                            label.TextColor3 = Color3.fromRGB(255, 50, 50)
-                                            label.TextStrokeTransparency = 0
-                                            label.Font = Enum.Font.GothamBold
-                                            label.TextSize = 20
-                                            label.Parent = bg
-                                            
-                                            local tween = game:GetService("TweenService"):Create(bg, TweenInfo.new(0.5), {StudsOffset = bg.StudsOffset + Vector3_new(0, 2, 0)})
-                                            tween:Play()
-                                            task_wait(0.5)
-                                            bg:Destroy()
-                                        end)
-                                    end
-                                end
-                            end
-                            lastHealth[pName] = currentHealth
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.DamageIndicator
-    end
-
-    -- Spider (爬牆)
-    CatFunctions.ToggleSpider = function(state)
-        if state == nil then _G.SpiderEnabled = not _G.SpiderEnabled else _G.SpiderEnabled = state end
-        if _G.SpiderEnabled then
-            task_spawn(function()
-                while _G.SpiderEnabled and task_wait() do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local ray = Ray.new(hrp.Position, hrp.CFrame.LookVector * 2)
-                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
-                        if hit then
-                            hrp.Velocity = Vector3_new(hrp.Velocity.X, 25, hrp.Velocity.Z)
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.SpiderEnabled
-    end
-
-    -- Anti-Void (防掉出地圖)
-    CatFunctions.ToggleAntiVoid = function(state)
-        if state == nil then _G.AntiVoid = not _G.AntiVoid else _G.AntiVoid = state end
-        if _G.AntiVoid then
-            local lastSafePos = nil
-            task_spawn(function()
-                while _G.AntiVoid and task_wait(0.1) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hrp and hum then
-                        if hum.FloorMaterial ~= Enum.Material.Air then
-                            lastSafePos = hrp.CFrame
-                        end
-                        if hrp.Position.Y < 0 then -- 通常 0 以下是虛空
-                            hrp.Velocity = Vector3_new(0, 0, 0)
-                            if lastSafePos then
-                                hrp.CFrame = lastSafePos + Vector3_new(0, 5, 0)
-                            else
-                                hrp.CFrame = hrp.CFrame + Vector3_new(0, 100, 0)
-                            end
-                            Notify("防掉落", "已自動將您救回地面！", 3)
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.AntiVoid
-    end
-
-    -- Battlefield State
-    CatFunctions.GetBattlefieldState = function()
-        local char = lp.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return {threats = {}, resources = {}, allies = {}} end
-        local state = {threats = {}, resources = {}, allies = {}, nearestThreat = nil, isBeingTargeted = false}
-        local myPos = hrp.Position
-        local maxScanDist = 150
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= lp and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                local ehrp = player.Character.HumanoidRootPart
-                local ehum = player.Character:FindFirstChildOfClass("Humanoid")
-                local dist = (myPos - ehrp.Position).Magnitude
-                if dist < maxScanDist then
-                    local pData = {player = player, hrp = ehrp, hum = ehum, dist = dist}
-                    if player.Team == lp.Team then
-                        table.insert(state.allies, pData)
-                    else
-                        table.insert(state.threats, pData)
-                        if not state.nearestThreat or dist < state.nearestThreat.dist then
-                            state.nearestThreat = pData
-                        end
-                        local dot = ehrp.CFrame.LookVector:Dot((myPos - ehrp.Position).Unit)
-                        if dot > 0.8 and dist < 40 then state.isBeingTargeted = true end
+        _G.Scaffold = state
+        if not _G.Scaffold then return end
+        task.spawn(function()
+            while _G.Scaffold and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    local pos = hrp.Position + (hrp.CFrame.LookVector * 1) - Vector3_new(0, 3.5, 0)
+                    local blockPos = Vector3_new(math.floor(pos.X/3)*3, math.floor(pos.Y/3)*3, math.floor(pos.Z/3)*3)
+                    local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true)
+                    if remote then
+                        remote:FireServer({["blockType"] = "wool_white", ["position"] = blockPos})
                     end
                 end
             end
-        end
-        for _, v in ipairs(workspace:GetDescendants()) do
-            if v:IsA("BasePart") then
-                local name = v.Name:lower()
-                -- Bedwars 資源通常是 Generator 或是掉落在地上的 Part
-                if name:find("diamond") or name:find("emerald") or name:find("iron") or name:find("gold") then
-                    local dist = (myPos - v.Position).Magnitude
-                    if dist < 100 then table.insert(state.resources, {part = v, dist = dist, name = v.Name}) end
-                end
-            end
-        end
-        table.sort(state.resources, function(a, b) return a.dist < b.dist end)
-        return state
+        end)
     end
 
-    -- Player Tracker (玩家追蹤)
-    CatFunctions.TogglePlayerTracker = function(state)
-        if state == nil then _G.PlayerTracker = not _G.PlayerTracker else _G.PlayerTracker = state end
-        if _G.PlayerTracker then
-            task_spawn(function()
-                while _G.PlayerTracker and task_wait(1) do
-                    local battlefield = CatFunctions.GetBattlefieldState()
-                    if battlefield.nearestThreat then
-                        Notify("玩家追蹤", "最近敵人: " .. battlefield.nearestThreat.player.DisplayName .. " | 距離: " .. math_floor(battlefield.nearestThreat.dist) .. "m", 2)
-                    end
-                end
-            end)
-        end
-        return _G.PlayerTracker
-    end
-
-    -- Bed Nuker (自動拆床)
-    CatFunctions.ToggleBedNuker = function(state)
-        if state == nil then _G.BedNuker = not _G.BedNuker else _G.BedNuker = state end
-        if _G.BedNuker then
-            task_spawn(function()
-                while _G.BedNuker and task_wait(0.2) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        for _, v in ipairs(workspace:GetDescendants()) do
-                            if v.Name == "bed" and v:IsA("BasePart") then
-                                local team = v:GetAttribute("Team")
-                                if team ~= lp.Team then
-                                    local dist = (hrp.Position - v.Position).Magnitude
-                                    if dist < 25 then
-                                        -- 嘗試多種可能的遠程事件
-                                        local remotes = {
-                                            ReplicatedStorage:FindFirstChild("DamageBlock", true),
-                                            ReplicatedStorage:FindFirstChild("HitBlock", true),
-                                            ReplicatedStorage:FindFirstChild("BreakBlock", true)
-                                        }
-                                        for _, remote in ipairs(remotes) do
-                                            if remote then
-                                                remote:FireServer({
-                                                    ["block"] = v,
-                                                    ["position"] = v.Position,
-                                                    ["direction"] = Vector3_new(0, 1, 0)
-                                                })
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.BedNuker
-    end
-
-    -- Auto Balloon (自動氣球防掉落)
-    CatFunctions.ToggleAutoBalloon = function(state)
-        if state == nil then _G.AutoBalloon = not _G.AutoBalloon else _G.AutoBalloon = state end
-        if _G.AutoBalloon then
-            task_spawn(function()
-                while _G.AutoBalloon and task_wait(0.1) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp and hrp.Position.Y < -10 then -- 掉入虛空深度
-                        -- 檢查是否有氣球
-                        local balloon = lp.Backpack:FindFirstChild("balloon") or (char and char:FindFirstChild("balloon"))
-                        if not balloon then
-                            -- 嘗試自動購買氣球 (如果錢夠)
-                            local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true)
-                            if remote then remote:FireServer({["item"] = "balloon"}) end
-                        end
-                        
-                        balloon = lp.Backpack:FindFirstChild("balloon") or (char and char:FindFirstChild("balloon"))
-                        if balloon then
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            if hum then 
-                                hum:EquipTool(balloon)
-                                task_wait(0.05)
-                                balloon:Activate()
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.AutoBalloon
-    end
-
-    -- Nuker (全自動方塊破壞)
-    CatFunctions.ToggleNuker = function(state)
-        if state == nil then _G.NukerEnabled = not _G.NukerEnabled else _G.NukerEnabled = state end
-        if _G.NukerEnabled then
-            task_spawn(function()
-                while _G.NukerEnabled and task_wait(0.1) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local region = Region3.new(hrp.Position - Vector3_new(15, 10, 15), hrp.Position + Vector3_new(15, 10, 15))
-                        for _, v in ipairs(workspace:FindPartsInRegion3(region, char, 100)) do
-                            if v:IsA("BasePart") and v.Name:lower():find("bed") == nil and v.CanCollide then
-                                -- 排除床，床由 Auto Bed Break 處理
-                                local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or ReplicatedStorage:FindFirstChild("HitBlock", true)
-                                if remote then remote:FireServer({["position"] = v.Position, ["block"] = v.Name}) end
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        return _G.NukerEnabled
-    end
-
-    -- Long Jump (長跳)
-    CatFunctions.ToggleLongJump = function(state)
-        if state == nil then _G.LongJumpEnabled = not _G.LongJumpEnabled else _G.LongJumpEnabled = state end
-        if _G.LongJumpEnabled then
-            local char = lp.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hrp and hum then
-                hum:Jump()
-                task_wait(0.1)
-                hrp.Velocity = hrp.Velocity + (hrp.CFrame.LookVector * 50) + Vector3_new(0, 30, 0)
-                Notify("長跳", "已啟動跳躍衝刺！", 2)
-                _G.LongJumpEnabled = false -- 一次性功能
-            end
-        end
-        return _G.LongJumpEnabled
-    end
-
-    -- Infinite Jump (無限跳躍)
     CatFunctions.ToggleInfiniteJump = function(state)
-        if state == nil then _G.InfiniteJump = not _G.InfiniteJump else _G.InfiniteJump = state end
-        if _G.InfiniteJump then
-            if _G.InfJumpConn then _G.InfJumpConn:Disconnect() end
-            _G.InfJumpConn = game:GetService("UserInputService").JumpRequest:Connect(function()
-                if _G.InfiniteJump then
-                    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then hum:ChangeState("Jumping") end
-                end
-            end)
-        else
-            if _G.InfJumpConn then _G.InfJumpConn:Disconnect() end
-        end
-        return _G.InfiniteJump
+        _G.InfiniteJump = state
+        game:GetService("UserInputService").JumpRequest:Connect(function()
+            if _G.InfiniteJump and lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
+                lplr.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+            end
+        end)
     end
 
-    -- NoSlowDown (無減速)
-    CatFunctions.ToggleNoSlowDown = function(state)
-        if state == nil then _G.NoSlowDown = not _G.NoSlowDown else _G.NoSlowDown = state end
-        if _G.NoSlowDown then
-            task_spawn(function()
-                while _G.NoSlowDown and task_wait() do
-                    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        -- 覆蓋 WalkSpeed 限制 (視遊戲而定，有些是屬性，有些是腳本控制)
-                        -- 這裡只是基礎實現
-                        if hum.WalkSpeed < 16 then hum.WalkSpeed = 16 end
+    CatFunctions.ToggleNoSlowdown = function(state)
+        _G.NoSlowdown = state
+        task.spawn(function()
+            while _G.NoSlowdown and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
+                    lplr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = _G.SpeedValue or 16
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleSpider = function(state)
+        _G.Spider = state
+        task.spawn(function()
+            while _G.Spider and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    local ray = Ray.new(hrp.Position, hrp.CFrame.LookVector * 2)
+                    local hit = workspace:FindPartOnRay(ray, lplr.Character)
+                    if hit then
+                        hrp.Velocity = Vector3_new(hrp.Velocity.X, 30, hrp.Velocity.Z)
                     end
                 end
-            end)
+            end
+        end)
+    end
+
+    CatFunctions.ToggleNoFall = function(state)
+        _G.NoFall = state
+        if not _G.NoFall then return end
+        task.spawn(function()
+            while _G.NoFall and task.wait(0.5) do
+                local remote = ReplicatedStorage:FindFirstChild("FallDamage", true) or 
+                               ReplicatedStorage:FindFirstChild("GroundHit", true)
+                if remote then
+                    remote:FireServer({["damage"] = 0, ["distance"] = 0})
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleVelocity = function(state)
+        _G.Velocity = state
+        if not _G.Velocity then return end
+        task.spawn(function()
+            while _G.Velocity and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    local horizontal = _G.VelocityHorizontal or 15
+                    local vertical = _G.VelocityVertical or 100
+                    hrp.Velocity = Vector3_new(hrp.Velocity.X * (horizontal / 100), hrp.Velocity.Y * (vertical / 100), hrp.Velocity.Z * (horizontal / 100))
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleSpeed = function(state)
+        _G.Speed = state
+        if not _G.Speed then return end
+        task.spawn(function()
+            local count = 0
+            while _G.Speed and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    count = count + 1
+                    if count % 3 == 0 then
+                        hrp.CFrame = hrp.CFrame + (hrp.CFrame.LookVector * (_G.SpeedValue or 0.5))
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleFly = function(state)
+        _G.Fly = state
+        if not _G.Fly then return end
+        task.spawn(function()
+            while _G.Fly and task.wait() do
+                if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = lplr.Character.HumanoidRootPart
+                    local vel = hrp.Velocity
+                    hrp.Velocity = Vector3_new(vel.X, 2 + math.sin(tick() * 10) * 0.5, vel.Z)
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoConsume = function(state)
+        _G.AutoConsume = state
+        if not _G.AutoConsume then return end
+        task.spawn(function()
+            while _G.AutoConsume and task.wait(1) do
+                if lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
+                    local hum = lplr.Character:FindFirstChildOfClass("Humanoid")
+                    if hum.Health < hum.MaxHealth * 0.5 then
+                        local remote = ReplicatedStorage:FindFirstChild("EatItem", true) or 
+                                       ReplicatedStorage:FindFirstChild("ConsumeItem", true)
+                        if remote then
+                            remote:FireServer({["item"] = "apple"})
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleBedNuker = function(state)
+        _G.BedNuker = state
+        if not _G.BedNuker then return end
+        task.spawn(function()
+            while _G.BedNuker and task.wait(0.2) do
+                local battlefield = CatFunctions.GetBattlefieldState()
+                for _, bed in ipairs(battlefield.beds) do
+                    if bed.dist < 25 then
+                        local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
+                                       ReplicatedStorage:FindFirstChild("HitBlock", true)
+                        if remote then
+                            remote:FireServer({["position"] = bed.part.Position, ["block"] = bed.part.Name})
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleAutoBalloon = function(state)
+        _G.AutoBalloon = state
+        if not _G.AutoBalloon then return end
+        task.spawn(function()
+            while _G.AutoBalloon and task.wait(0.5) do
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp and hrp.Position.Y < -50 then
+                    local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true)
+                    if remote then
+                        remote:FireServer({["item"] = "balloon"})
+                    end
+                    task.wait(0.2)
+                    local balloon = char:FindFirstChild("balloon") or lplr.Backpack:FindFirstChild("balloon")
+                    if balloon then
+                        balloon.Parent = char
+                        balloon:Activate()
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.ToggleNuker = function(state)
+        _G.Nuker = state
+        if not _G.Nuker then return end
+        task.spawn(function()
+            while _G.Nuker and task.wait(0.1) do
+                local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    for _, v in pairs(workspace:GetPartBoundsInRadius(hrp.Position, 15)) do
+                        if v:IsA("BasePart") and v.CanCollide and not v:IsDescendantOf(lplr.Character) then
+                            local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
+                                           ReplicatedStorage:FindFirstChild("HitBlock", true)
+                            if remote then
+                                remote:FireServer({["position"] = v.Position, ["block"] = v.Name})
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    CatFunctions.GetBattlefieldState = function()
+        local state = {
+            targets = {},
+            resources = {},
+            beds = {},
+            nearestThreat = nil,
+            isBeingTargeted = false
+        }
+        local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return state end
+
+        for _, v in pairs(Players:GetPlayers()) do
+            if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                local targetHrp = v.Character.HumanoidRootPart
+                local dist = (hrp.Position - targetHrp.Position).Magnitude
+                local threat = {hrp = targetHrp, dist = dist, player = v}
+                table.insert(state.targets, threat)
+                if not state.nearestThreat or dist < state.nearestThreat.dist then
+                    state.nearestThreat = threat
+                end
+                if dist < 20 then
+                    state.isBeingTargeted = true
+                end
+            end
         end
-        return _G.NoSlowDown
+
+        local function scan(parent)
+            for _, v in pairs(parent:GetChildren()) do
+                local name = v.Name:lower()
+                if name:find("diamond") or name:find("emerald") or name:find("iron") then
+                    local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                    if p then
+                        table.insert(state.resources, {part = p, name = v.Name, dist = (hrp.Position - p.Position).Magnitude})
+                    end
+                end
+                if name:find("bed") then
+                    local p = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
+                    if p then
+                        table.insert(state.beds, {part = p, dist = (hrp.Position - p.Position).Magnitude})
+                    end
+                end
+                if v:IsA("Folder") or v:IsA("Model") then
+                    scan(v)
+                end
+            end
+        end
+        scan(workspace)
+        
+        table.sort(state.resources, function(a, b) return a.dist < b.dist end)
+        
+        return state
     end
 
     return CatFunctions
 end
 
-return FunctionsModule
+return functionsModule

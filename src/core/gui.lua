@@ -1,5 +1,20 @@
--- Halol (V4.0) GUI 模組
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local Color3 = Color3 or getgenv().Color3
+local UDim2 = UDim2 or getgenv().UDim2
+local UDim = UDim or getgenv().UDim
+local Vector3 = Vector3 or getgenv().Vector3
+local task = task or getgenv().task
+local Instance = Instance or getgenv().Instance
+local Enum = Enum or getgenv().Enum
+local ColorSequence = ColorSequence or getgenv().ColorSequence
+local ColorSequenceKeypoint = ColorSequenceKeypoint or getgenv().ColorSequenceKeypoint
+local pairs = pairs or getgenv().pairs
+local ipairs = ipairs or getgenv().ipairs
+local pcall = pcall or getgenv().pcall
+local gethui = (getgenv().gethui or function() return game:GetService("CoreGui") end)
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
@@ -14,7 +29,6 @@ local task_wait = task.wait
 
 local GuiModule = {}
 
--- 輔助函數：屬性賦值
 local function ApplyProperties(instance, props)
     for k, v in pairs(props) do
         instance[k] = v
@@ -22,7 +36,6 @@ local function ApplyProperties(instance, props)
     return instance
 end
 
--- 輔助函數：安全連接
 local function SafeConnect(signal, callback)
     local success, conn = pcall(function()
         return signal:Connect(callback)
@@ -43,7 +56,6 @@ function GuiModule.CreateMainGui()
     local ContentContainer = Instance.new("Frame")
     local CloseButton = Instance.new("TextButton")
 
-    -- ScreenGui 設置
     ApplyProperties(ScreenGui, {
         Name = "HalolV4",
         Parent = (gethui and gethui()) or CoreGui,
@@ -51,7 +63,6 @@ function GuiModule.CreateMainGui()
         DisplayOrder = 9999
     })
 
-    -- 主框架
     ApplyProperties(MainFrame, {
         Name = "MainFrame",
         Parent = ScreenGui,
@@ -66,7 +77,6 @@ function GuiModule.CreateMainGui()
     MainCorner.CornerRadius = UDim.new(0, 10)
     MainCorner.Parent = MainFrame
 
-    -- RGB 線
     ApplyProperties(RGBLine, {
         Name = "RGBLine",
         Parent = MainFrame,
@@ -76,7 +86,6 @@ function GuiModule.CreateMainGui()
         Size = UDim2_new(1, 0, 0, 2)
     })
 
-    -- 標題
     ApplyProperties(Title, {
         Name = "Title",
         Parent = MainFrame,
@@ -103,7 +112,6 @@ function GuiModule.CreateMainGui()
         TextXAlignment = Enum.TextXAlignment.Left
     })
 
-    -- 分頁容器
     ApplyProperties(TabContainer, {
         Name = "TabContainer",
         Parent = MainFrame,
@@ -118,7 +126,6 @@ function GuiModule.CreateMainGui()
     TabList.Padding = UDim.new(0, 5)
     TabList.SortOrder = Enum.SortOrder.LayoutOrder
 
-    -- 內容容器
     ApplyProperties(ContentContainer, {
         Name = "ContentContainer",
         Parent = MainFrame,
@@ -131,7 +138,6 @@ function GuiModule.CreateMainGui()
     ContentCorner.CornerRadius = UDim.new(0, 8)
     ContentCorner.Parent = ContentContainer
 
-    -- 關閉按鈕
     ApplyProperties(CloseButton, {
         Name = "CloseButton",
         Parent = MainFrame,
@@ -144,7 +150,6 @@ function GuiModule.CreateMainGui()
         TextSize = 18
     })
 
-    -- RGB 循環
     task_spawn(function()
         local hue = 0
         local UIGradient = Instance.new("UIGradient")

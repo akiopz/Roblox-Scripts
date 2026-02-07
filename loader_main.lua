@@ -1,6 +1,26 @@
--- Halol (V4.0) 核心加載器 (完整模組化版本)
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local ipairs = ipairs or getgenv().ipairs
+local pcall = pcall or getgenv().pcall
+local os = os or getgenv().os
+local print = print or getgenv().print
+local error = error or getgenv().error
+local tostring = tostring or getgenv().tostring
+local load_func = (getgenv().loadstring or getgenv().load or loadstring or load)
+
+_G.ProjectileAura = _G.ProjectileAura or false
+_G.VelocityHorizontal = _G.VelocityHorizontal or 15
+_G.VelocityVertical = _G.VelocityVertical or 100
+
 print("Halol V4.0 開始加載...")
+
+_G.AI_Enabled = _G.AI_Enabled or false
+_G.GodModeAI = _G.GodModeAI or false
+_G.AutoToxic = _G.AutoToxic or false
+_G.SpeedValue = _G.SpeedValue or 23
+_G.KillAuraCPS = _G.KillAuraCPS or 10
+_G.KillAuraMaxTargets = _G.KillAuraMaxTargets or 1
 
 local function Notify(title, text, duration)
     pcall(function()
@@ -13,7 +33,6 @@ local function Notify(title, text, duration)
 end
 
 local success, err = pcall(function()
-    -- === 基礎配置 ===
     local HOSTS = {
         "https://raw.githubusercontent.com/akiopz/Roblox-Scripts/main/",
         "https://raw.fastgit.org/akiopz/Roblox-Scripts/main/"
@@ -28,7 +47,7 @@ local success, err = pcall(function()
                 return game:HttpGet(url)
             end)
             if ok and content and content ~= "" then
-                local func, parseErr = loadstring(content)
+                local func, parseErr = load_func(content)
                 if func then
                     local execSuccess, result = pcall(func)
                     if execSuccess then
@@ -48,7 +67,6 @@ local success, err = pcall(function()
 
     Notify("Halol V4.0", "正在初始化核心模組...", 3)
 
-    -- 1. 加載核心模組
     local env = GetScript("src/core/env.lua")
     
     local guiModule = GetScript("src/core/gui.lua")
@@ -60,24 +78,20 @@ local success, err = pcall(function()
 
     Notify("Halol V4.0", "核心加載成功，正在載入功能...", 3)
 
-    -- 2. 加載功能與 AI 模組
     local functionsModule = GetScript("src/modules/functions.lua")
     local CatFunctions = functionsModule.Init(env)
     local blatantModule = GetScript("src/modules/blatant.lua")
     local Blatant = blatantModule.Init(mainGui, Notify)
 
-    -- 初始化 AI
     local aiModule = GetScript("src/modules/ai.lua")
     local AI = aiModule.Init(CatFunctions, Blatant)
 
     local visualsModule = GetScript("src/modules/visuals.lua")
     local Visuals = visualsModule.Init(mainGui, Notify)
 
-    -- 3. 初始化分頁
     local firstTab = GuiUtils.CreateTab("自動核心")
     GuiUtils.CreateTab("視覺功能")
     GuiUtils.CreateTab("暴力功能")
-    -- BEDWARS 專區
     GuiUtils.AddScript("BEDWARS 專區", "自動拆床 (Bed Nuker)", "自動拆除 25 格範圍內的敵方床位。", function()
         CatFunctions.ToggleBedNuker()
     end)
@@ -102,7 +116,6 @@ local success, err = pcall(function()
         Blatant.ToggleAutoToxic(not _G.AutoToxic)
     end)
     
-    -- 默認選中第一個分頁
     if firstTab then firstTab.Switch() end
     
     GuiUtils.AddScript("自動核心", "自動掛機 (Auto Play)", "全自動作戰與資源收集。", function()
@@ -201,7 +214,6 @@ local success, err = pcall(function()
         Blatant.ToggleProjectileAura(not _G.ProjectileAura)
     end)
 
-    -- 視覺功能
     GuiUtils.AddScript("視覺功能", "玩家透視 (Highlight)", "高亮顯示玩家輪廓。", function()
         Visuals.ToggleHighlight()
     end)
@@ -245,7 +257,6 @@ local success, err = pcall(function()
         Visuals.ToggleRadar(_G.RadarEnabled)
     end)
 
-    -- 暴力功能
     GuiUtils.AddScript("暴力功能", "全員墜空 (Void All)", "將伺服器玩家甩入虛空。", function()
         _G.VoidAll = not _G.VoidAll
         Blatant.ToggleVoidAll(_G.VoidAll)
@@ -280,7 +291,6 @@ local success, err = pcall(function()
         Blatant.ToggleAutoToxic(_G.AutoToxic)
     end)
 
-    -- BEDWARS 專區
     GuiUtils.AddScript("BEDWARS 專區", "快速破床 (Fast Break)", "瞬間破壞任何方塊與床位。", function()
         _G.FastBreak = not _G.FastBreak
         Blatant.ToggleFastBreak(_G.FastBreak)
@@ -319,7 +329,7 @@ local success, err = pcall(function()
     end)
 
     GuiUtils.AddScript("BEDWARS 專區", "自動套裝能力 (Auto Kit Ability)", "全自動觸發當前套裝的特殊能力。", function()
-        CatFunctions.ToggleAutoKitAbility()
+        CatFunctions.ToggleKitAbility()
     end)
 
     GuiUtils.AddScript("BEDWARS 專區", "自動消耗品 (Auto Consume)", "低血量時自動使用蘋果或藥水。", function()

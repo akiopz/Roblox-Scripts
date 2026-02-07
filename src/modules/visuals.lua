@@ -1,5 +1,21 @@
--- Halol (V4.0) 視覺功能模組
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local workspace = workspace or getgenv().workspace
+local Color3 = Color3 or getgenv().Color3
+local UDim2 = UDim2 or getgenv().UDim2
+local Vector3 = Vector3 or getgenv().Vector3
+local Vector2 = Vector2 or getgenv().Vector2
+local task = task or getgenv().task
+local math = math or getgenv().math
+local string = string or getgenv().string
+local Instance = Instance or getgenv().Instance
+local Enum = Enum or getgenv().Enum
+local Drawing = Drawing or getgenv().Drawing
+local ipairs = ipairs or getgenv().ipairs
+local pairs = pairs or getgenv().pairs
+local pcall = pcall or getgenv().pcall
+
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local Color3_fromRGB = Color3.fromRGB
@@ -9,7 +25,11 @@ local Vector3_new = Vector3.new
 local task_spawn = task.spawn
 local task_wait = task.wait
 local math_floor = math.floor
-local math_clamp = math.clamp
+local math_clamp = math.clamp or function(v, min, max)
+    if v < min then return min end
+    if v > max then return max end
+    return v
+end
 local string_format = string.format
 
 local VisualsModule = {}
@@ -17,7 +37,6 @@ local VisualsModule = {}
 function VisualsModule.Init(Gui, Notify)
     local ESPTag = "CatESP"
     
-    -- 玩家透視 (Highlight)
     local function ApplyHighlightESP(char)
         if not char or char:FindFirstChild(ESPTag) then return end
         Gui.ApplyProperties(Instance.new("Highlight"), {
@@ -28,7 +47,6 @@ function VisualsModule.Init(Gui, Notify)
         })
     end
 
-    -- 全面透視 (Full ESP)
     local function CreateFullESP(player)
         if player == lp then return end
         
@@ -62,7 +80,7 @@ function VisualsModule.Init(Gui, Notify)
                 BackgroundTransparency = 1,
                 Size = UDim2_new(1, 0, 0.4, 0),
                 Font = Enum.Font.GothamBold,
-                TextColor3 = player.TeamColor.Color or Color3_fromRGB(255, 255, 255),
+                TextColor3 = (player.TeamColor and player.TeamColor.Color) or Color3_fromRGB(255, 255, 255),
                 TextSize = 14,
                 TextStrokeTransparency = 0.5,
                 Text = player.DisplayName or player.Name
@@ -123,7 +141,6 @@ function VisualsModule.Init(Gui, Notify)
         Gui.SafeConnect(player.CharacterAdded, OnCharacterAdded)
     end
 
-    -- 連線透視 (Tracers)
     local function CreateTracer(player)
         if player == lp then return end
         local line = nil
@@ -158,7 +175,6 @@ function VisualsModule.Init(Gui, Notify)
         end)
     end
 
-    -- 全亮模式 (Fullbright)
     local function ToggleFullbright(state)
         _G.FullbrightEnabled = state
         if _G.FullbrightEnabled then
@@ -185,7 +201,6 @@ function VisualsModule.Init(Gui, Notify)
         end
     end
 
-    -- 箱子透視 (Chest ESP)
     local function CreateChestESP(chest)
         if not chest or chest:FindFirstChild("ChestESP") then return end
         
@@ -218,40 +233,6 @@ function VisualsModule.Init(Gui, Notify)
         end)
     end
 
-    -- 掉落物透視 (Item ESP)
-    local function CreateItemESP(item)
-        if not item or item:FindFirstChild("ItemESP") then return end
-        
-        local billboard = Instance.new("BillboardGui")
-        Gui.ApplyProperties(billboard, {
-            Name = "ItemESP",
-            Adornee = item,
-            Size = UDim2_new(0, 100, 0, 40),
-            AlwaysOnTop = true,
-            Parent = item
-        })
-        
-        local label = Instance.new("TextLabel")
-        Gui.ApplyProperties(label, {
-            Parent = billboard,
-            BackgroundTransparency = 1,
-            Size = UDim2_new(1, 0, 1, 0),
-            Font = Enum.Font.Gotham,
-            TextColor3 = Color3_fromRGB(0, 255, 255),
-            TextSize = 10,
-            TextStrokeTransparency = 0.5,
-            Text = item.Name
-        })
-        
-        task_spawn(function()
-            while _G.ItemESPEnabled and item.Parent do
-                task_wait(1)
-            end
-            billboard:Destroy()
-        end)
-    end
-
-    -- 商店透視 (Shop ESP)
     local function CreateShopESP(npc)
         if not npc or npc:FindFirstChild("ShopESP") then return end
         
@@ -277,7 +258,6 @@ function VisualsModule.Init(Gui, Notify)
         })
     end
 
-    -- 雷達 (Radar)
     local function CreateRadar()
         if _G.RadarGui then _G.RadarGui:Destroy() end
         
@@ -389,22 +369,6 @@ function VisualsModule.Init(Gui, Notify)
                             if not _G.ChestESPEnabled then break end
                             if v:IsA("BasePart") and v.Name:lower():find("chest") then
                                 CreateChestESP(v)
-                            end
-                        end
-                    end
-                end)
-            end
-        end,
-        ToggleItemESP = function(state)
-            _G.ItemESPEnabled = state
-            if _G.ItemESPEnabled then
-                task_spawn(function()
-                    while _G.ItemESPEnabled and task_wait(2) do
-                        local drops = workspace:FindFirstChild("ItemDrops") or workspace:FindFirstChild("Drops")
-                        if drops then
-                            for _, v in ipairs(drops:GetChildren()) do
-                                if not _G.ItemESPEnabled then break end
-                                CreateItemESP(v)
                             end
                         end
                     end

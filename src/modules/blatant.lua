@@ -1,5 +1,20 @@
--- Halol (V4.0) 暴力與 Bedwars 專用功能模組
----@diagnostic disable: undefined-global, deprecated, undefined-field
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+local getgenv = getgenv or function() return _G end
+local game = game or getgenv().game
+local workspace = workspace or getgenv().workspace
+local task = task or getgenv().task
+local Vector3 = Vector3 or getgenv().Vector3
+local CFrame = CFrame or getgenv().CFrame
+local math = math or getgenv().math
+local table = table or getgenv().table
+local pairs = pairs or getgenv().pairs
+local ipairs = ipairs or getgenv().ipairs
+local pcall = pcall or getgenv().pcall
+local Instance = Instance or getgenv().Instance
+local Enum = Enum or getgenv().Enum
+local Color3 = Color3 or getgenv().Color3
+local UDim2 = UDim2 or getgenv().UDim2
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
@@ -11,7 +26,6 @@ local BlatantModule = {}
 
 function BlatantModule.Init(Gui, Notify)
     return {
-        -- 全員墜空 (Void All)
         ToggleVoidAll = function(state)
             _G.VoidAll = state
             if not _G.VoidAll then return end
@@ -22,7 +36,8 @@ function BlatantModule.Init(Gui, Notify)
             
             local function Fling(target)
                 if not _G.VoidAll then return end
-                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and target.Team ~= lp.Team then
                     local thrp = target.Character.HumanoidRootPart
                     local bfv = Instance.new("BodyAngularVelocity")
                     Gui.ApplyProperties(bfv, {
@@ -51,7 +66,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 快速破床 (Fast Break)
         ToggleFastBreak = function(state)
             _G.FastBreak = state
             if not _G.FastBreak then return end
@@ -73,7 +87,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 自動拿取箱子 (Chest Stealer - 全圖版)
         ToggleChestStealer = function(state)
             _G.ChestStealer = state
             if not _G.ChestStealer then return end
@@ -83,14 +96,12 @@ function BlatantModule.Init(Gui, Notify)
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp then
                         local foundChests = {}
-                        -- 收集所有箱子
                         for _, v in ipairs(workspace:GetDescendants()) do
                             if v:IsA("BasePart") and v.Name:lower():find("chest") then
                                 table.insert(foundChests, v)
                             end
                         end
 
-                        -- 遍歷所有箱子並傳送拿取
                         for _, chest in ipairs(foundChests) do
                             if not _G.ChestStealer then break end
                             
@@ -98,17 +109,13 @@ function BlatantModule.Init(Gui, Notify)
                                            ReplicatedStorage:FindFirstChild("TakeItemFromChest", true)
                             
                             if remote then
-                                -- 保存當前位置
                                 local oldCF = hrp.CFrame
-                                -- 傳送到箱子位置
                                 hrp.CFrame = chest.CFrame + Vector3_new(0, 3, 0)
-                                task_wait(0.1) -- 等待傳送穩定
+                                task_wait(0.1)
                                 
-                                -- 觸發拿取遠程
                                 remote:FireServer({["chest"] = chest})
-                                task_wait(0.1) -- 等待拿取動作完成
+                                task_wait(0.1)
                                 
-                                -- 傳送回原位 (可選，但為了用戶體驗通常會傳送回來)
                                 hrp.CFrame = oldCF
                             end
                         end
@@ -117,45 +124,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 全圖資源收集 (Global Resource Collect)
-        ToggleGlobalResourceCollect = function(state)
-            _G.GlobalResourceCollect = state
-            if not _G.GlobalResourceCollect then return end
-            task_spawn(function()
-                while _G.GlobalResourceCollect and task_wait(1) do
-                    local char = lp.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        -- 優先搜索專門的掉落物容器
-                        local drops = workspace:FindFirstChild("ItemDrops") or workspace:FindFirstChild("Drops")
-                        if drops then
-                            for _, v in ipairs(drops:GetChildren()) do
-                                if not _G.GlobalResourceCollect then break end
-                                local part = v:IsA("BasePart") and v or v:FindFirstChildWhichIsA("BasePart", true)
-                                if part then
-                                    hrp.CFrame = part.CFrame
-                                    task_wait(0.1)
-                                end
-                            end
-                        else
-                            -- 退而求其次，全圖掃描資源關鍵字
-                            for _, v in ipairs(workspace:GetDescendants()) do
-                                if not _G.GlobalResourceCollect then break end
-                                if v:IsA("BasePart") and (v.Name == "Handle" or v.Name == "ItemDrop") then
-                                    local pName = v.Parent and v.Parent.Name:lower() or ""
-                                    if pName:find("iron") or pName:find("gold") or pName:find("diamond") or pName:find("emerald") then
-                                        hrp.CFrame = v.CFrame
-                                        task_wait(0.1)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-        end,
-
-        -- 遠程光環 (Projectile Aura)
         ToggleProjectileAura = function(state)
             _G.ProjectileAura = state
             if not _G.ProjectileAura then return end
@@ -176,8 +144,7 @@ function BlatantModule.Init(Gui, Notify)
                             end
                         end
                         if nearest then
-                            -- 自動瞄準
-                            local pos = nearest.Position + (nearest.Velocity * (minDist / 100)) -- 簡單預判
+                            local pos = nearest.Position + (nearest.Velocity * (minDist / 100))
                             workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, pos)
                         end
                     end
@@ -185,7 +152,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 自動購買 (Auto Buy)
         ToggleAutoBuy = function(state)
             _G.AutoBuy = state
             if not _G.AutoBuy then return end
@@ -204,7 +170,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 自動穿甲 (Auto Armor)
         ToggleAutoArmor = function(state)
             _G.AutoArmor = state
             if not _G.AutoArmor then return end
@@ -215,7 +180,6 @@ function BlatantModule.Init(Gui, Notify)
                         local remote = ReplicatedStorage:FindFirstChild("EquipArmor", true) or 
                                        ReplicatedStorage:FindFirstChild("WearArmor", true)
                         if remote then
-                            -- 某些版本需要手動觸發
                             remote:FireServer()
                         end
                     end
@@ -223,12 +187,10 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 高級自動購買 (Auto Buy Pro)
         ToggleAutoBuyPro = function(state)
             _G.AutoBuyPro = state
             if not _G.AutoBuyPro then return end
             task_spawn(function()
-                -- 優先級順序 (Bedwars 實際 ID 通常為 emerald_sword, diamond_sword 等)
                 local priority = {
                     {id = "emerald_sword", cost = 20, currency = "emerald"},
                     {id = "diamond_sword", cost = 4, currency = "emerald"},
@@ -236,9 +198,9 @@ function BlatantModule.Init(Gui, Notify)
                     {id = "emerald_armor", cost = 40, currency = "emerald"},
                     {id = "diamond_armor", cost = 8, currency = "emerald"},
                     {id = "iron_armor", cost = 120, currency = "iron"},
-                    {id = "telepearl", cost = 1, currency = "emerald"}, -- 加入傳送珍珠
-                    {id = "balloon", cost = 2, currency = "emerald"},   -- 加入氣球
-                    {id = "fireball", cost = 40, currency = "iron"},    -- 加入火球
+                    {id = "telepearl", cost = 1, currency = "emerald"},
+                    {id = "balloon", cost = 2, currency = "emerald"},
+                    {id = "fireball", cost = 40, currency = "iron"},
                     {id = "wool_white", cost = 16, currency = "iron"}
                 }
                 
@@ -255,7 +217,6 @@ function BlatantModule.Init(Gui, Notify)
             end)
         end,
 
-        -- 自動嘲諷 (Auto Toxic)
         ToggleAutoToxic = function(state)
             _G.AutoToxic = state
             if not _G.AutoToxic then return end
@@ -275,7 +236,6 @@ function BlatantModule.Init(Gui, Notify)
                         if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("Humanoid") then
                             local hum = p.Character.Humanoid
                             if lastHealth[p.Name] and lastHealth[p.Name] > 0 and hum.Health <= 0 then
-                                -- 觸發嘲諷
                                 local msg = messages[math.random(1, #messages)]
                                 local sayMsg = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and 
                                                ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
@@ -284,7 +244,7 @@ function BlatantModule.Init(Gui, Notify)
                                 elseif game:GetService("TextChatService"):FindFirstChild("TextChannels") then
                                     game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
                                 end
-                                task_wait(2) -- 防止刷屏
+                                task_wait(2)
                             end
                             lastHealth[p.Name] = hum.Health
                         end
