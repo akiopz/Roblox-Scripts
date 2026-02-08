@@ -3,6 +3,7 @@
 -- 放置於: 射擊類/init.lua
 
 local getgenv = (getgenv or function() return _G end)
+---@class GlobalEnv
 local env_global = getgenv()
 
 -- 通知函數
@@ -23,7 +24,7 @@ Notify("射擊模組", "正在加載射擊類專用功能...", 3)
 -- 1. 加載戰鬥模組
 local CombatModule
 local combatPath = "射擊類/combat.lua"
-local remoteCombatUrl = "https://raw.githubusercontent.com/akiopz/-ez/main/Shooting/combat.lua"
+local remoteCombatUrl = "https://raw.githubusercontent.com/akiopz/-ez/main/%E5%B0%84%E6%93%8A%E9%A1%9E/combat.lua"
 
 local load_func = (env_global.loadstring or env_global.load or loadstring or load)
 
@@ -47,27 +48,49 @@ local function ForceClearGlobals()
 end
 
 -- [[ 早鳥反偵測 Hook ]]
--- 在加載主模組前先建立防線
+-- 在加載主模組前先建立防線，防止加載瞬間被偵測
 local function EarlyBirdBypass()
-    if not hookmetamethod then return end
+    if not hookmetamethod or env_global.__HalolEarlyBirdActive then return end
+    env_global.__HalolEarlyBirdActive = true
     
-    print("[Halol] 正在啟動早鳥反偵測系統...")
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-        
-        -- 攔截常見的偵測 Remote
-        if (method == "FireServer" or method == "InvokeServer") and not checkcaller() then
-            local remoteName = tostring(self):lower()
-            if remoteName:find("cheat") or remoteName:find("exploit") or remoteName:find("detect") or remoteName:find("flag") then
-                warn("[Halol EarlyBird] 攔截到偵測請求: " .. tostring(self))
-                return nil
+    print("[Halol] 正在啟動極限早鳥反偵測系統...")
+    local ok, err = pcall(function()
+        -- 1. 攔截 Remote 調用 (核心防線)
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            
+            if (method == "FireServer" or method == "InvokeServer") and not checkcaller() then
+                local remoteName = tostring(self):lower()
+                -- 擴充更全面的關鍵字
+                if remoteName:find("cheat") or remoteName:find("exploit") or remoteName:find("detect") or remoteName:find("flag")
+                or remoteName:find("report") or remoteName:find("scan") or remoteName:find("ban") or remoteName:find("kick")
+                or remoteName:find("ac") or remoteName:find("anticheat") or remoteName:find("security") 
+                or remoteName:find("vanguard") or remoteName:find("watcher") or remoteName:find("logger") then
+                    warn("[Halol EarlyBird] 攔截到極敏感請求: " .. tostring(self))
+                    return nil
+                end
             end
-        end
-        
-        return oldNamecall(self, ...)
-    end))
+            
+            return oldNamecall(self, ...)
+        end))
+
+        -- 2. 攔截可能導致瞬間踢出的屬性偵測
+        local oldIndex
+        oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+            if not checkcaller() then
+                -- 攔截對執行器環境的偵測
+                if self == getgenv() and (key == "__HalolEarlyBirdActive" or key == "CombatModule") then
+                    return nil
+                end
+            end
+            return oldIndex(self, key)
+        end))
+    end)
+    
+    if not ok then
+        warn("[Halol] 早鳥系統啟動失敗: " .. tostring(err))
+    end
 end
 
 local function LoadCombat(content, source)

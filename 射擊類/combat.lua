@@ -52,105 +52,211 @@ local Combat = {}
 local function IsRealRequest()
     if not env_global.AntiCheatBypass then return true end
     
-    -- checkcaller() 是最重要的反偵測手段
+    -- 1. 最基礎且最可靠的 checkcaller
     if checkcaller and checkcaller() then
-        return true -- 來自腳本自身的調用，允許通過
+        return true 
     end
 
+    -- 2. 深度堆疊檢查
     local stack = debug.traceback()
-    -- 增加更多敏感關鍵字，判斷是否為反外掛調用
     local ac_keywords = {
         "Anticheat", "Adonis", "Sentinel", "AC", "Detection", "Flag", "Log",
         "Watcher", "Checker", "Ban", "Kick", "Verify", "Protect", "Security",
-        "Guardian", "Cerberus", "Bat", "Krampus"
+        "Guardian", "Cerberus", "Bat", "Krampus", "Cyclops", "TrueSight", "Vanguard"
     }
     
     for _, word in ipairs(ac_keywords) do
         if stack:find(word) then
-            return false -- 這是偵測請求
+            return false 
         end
     end
     
-    -- 檢查函數名稱
+    -- 3. 檢查呼叫者的函數資訊
     local info = debug.getinfo(3)
-    if info and info.name then
-        local name = info.name:lower()
-        if name:find("check") or name:find("detect") or name:find("kick") then
-            return false
+    if info then
+        -- 如果來源包含腳本路徑或名稱，且不是 C 函數
+        if info.source and (info.source:find("Halol") or info.source:find("Combat")) then
+            return true -- 這是我們自己的
+        end
+        
+        -- 攔截敏感函數名稱
+        if info.name then
+            local name = info.name:lower()
+            if name:find("check") or name:find("detect") or name:find("kick") or name:find("ban") or name:find("flag") then
+                return false
+            end
         end
     end
 
-    return true -- 這是正常遊戲請求
+    return true
 end
 
--- [[ 強力注入與偽裝系統 (含 Anti-600 延遲優化) ]]
-local function SetupAdvancedProtection()
-    if not hookmetamethod then return end
-    
-    -- 1. 偽裝遊戲環境與 Ping 值
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+-- [[ 極限隱蔽：掃描保護 (Anti-getgc/getreg) ]]
+local function SetupStealthProtection()
+    if not hookfunction then return end
+
+    -- 1. 隱藏腳本函數，防止被 getgc() 掃描到
+    local oldGetGC
+    oldGetGC = hookfunction(getgc, newcclosure(function(include_tables)
+        local gc = oldGetGC(include_tables)
         if not checkcaller() then
-            -- 防止偵測到 CoreGui 中的 Halol 介面
-            if self == game:GetService("CoreGui") and (key == "HalolMainGui" or key == "HalolESP") then
-                return nil
-            end
-            
-            -- 防止偵測到全局變量
-            if self == getgenv() and (key == "CombatModule" or key == "HalolMainGui") then
-                return nil
-            end
-
-            -- Anti-600: 偽造 Ping 值與數據傳輸量，防止偵測到延遲飆升
-            if env_global.AntiCheatBypass then
-                if key == "DataReceiveKbps" or key == "DataSendKbps" then
-                    return math.random(20, 50)
+            local new_gc = {}
+            for i, v in pairs(gc) do
+                -- 過濾掉包含 Halol 關鍵字的函數或表格
+                local is_mine = false
+                if type(v) == "function" then
+                    local info = debug.getinfo(v)
+                    if info and info.source and info.source:find("Halol") then
+                        is_mine = true
+                    end
+                elseif type(v) == "table" and (v == env_global or v == Combat) then
+                    is_mine = true
                 end
-                if key == "HeartbeatTimeReference" then
-                    return tick()
+                
+                if not is_mine then
+                    table.insert(new_gc, v)
                 end
             end
+            return new_gc
         end
-        return oldIndex(self, key)
+        return gc
     end))
-    
-    -- 2. 限制 Remote 發送頻率與早鳥攔截
-    local lastRemoteTime = {}
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        if (method == "FireServer" or method == "InvokeServer") and not checkcaller() then
-            local remote = tostring(self)
-            local now = tick()
-            
-            -- 攔截偵測相關 Remote
-            local remoteName = remote:lower()
-            if remoteName:find("cheat") or remoteName:find("exploit") or remoteName:find("detect") or remoteName:find("flag") then
-                return nil
-            end
 
-            -- Anti-600: 如果同一個 Remote 發送過快 (超過每秒 20 次)，則攔截
-            if lastRemoteTime[remote] and (now - lastRemoteTime[remote]) < 0.05 then
-                return nil 
+    -- 2. 隱藏執行器特徵 (如果支援)
+    if env_global.identifyexecutor then
+        local oldIdentify = hookfunction(env_global.identifyexecutor, newcclosure(function()
+            if not checkcaller() then
+                return "Roblox", "1.0" -- 偽裝成官方環境
             end
-            lastRemoteTime[remote] = now
-        end
-        return oldNamecall(self, ...)
-    end))
+            return oldIdentify()
+        end))
+    end
+
+    print("[Halol] 極限隱蔽系統已啟動 (Anti-Scanning)")
+end
+
+-- [[ 強力注入與偽裝系統 (含 Anti-600 延遲優化與 Anti-Kick) ]]
+local function SetupAdvancedProtection()
+    if not hookmetamethod or env_global.__HalolAdvancedProtectionActive then return end
+    env_global.__HalolAdvancedProtectionActive = true
     
-    -- 3. 攔截 debug.getinfo 防止追蹤腳本
-    local oldGetInfo
-    oldGetInfo = hookfunction(debug.getinfo, newcclosure(function(f, ...)
-        local info = oldGetInfo(f, ...)
-        if not checkcaller() and info and info.source and info.source:find("Halol") then
-            info.source = "=[C]"
-            info.what = "C"
-            info.name = "hidden"
-        end
-        return info
-    end))
+    -- 啟動掃描保護
+    pcall(SetupStealthProtection)
     
-    print("[Halol] 強力注入偽裝與延遲優化系統已啟動 (Anti-600 Ready)")
+    local ok, err = pcall(function()
+        -- 1. 偽裝遊戲環境與 Ping 值（含平滑抖動）
+        local lastPing = 35
+        local function jitter(base)
+            local j = (math.random() - 0.5) * 2 -- -1..1
+            return math.max(20, math.min(50, base + j * 3))
+        end
+        local oldIndex
+        oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+            if not checkcaller() then
+                -- 核心介面保護
+                local coreGui = game:GetService("CoreGui")
+                if (self == coreGui or (gethui and self == gethui())) and (key == "HalolMainGui" or key == "HalolESP") then
+                    return nil
+                end
+                
+                -- 全局環境保護
+                if self == getgenv() and (key == "CombatModule" or key == "HalolMainGui" or key == "HalolUtils" or key == "__HalolAdvancedProtectionActive" or key == "__HalolEarlyBirdActive") then
+                    return nil
+                end
+
+                -- Anti-600: 偽造 Ping 值與數據傳輸量
+                if env_global.AntiCheatBypass then
+                    if key == "DataReceiveKbps" or key == "DataSendKbps" then
+                        lastPing = jitter(lastPing)
+                        return lastPing
+                    end
+                    if key == "HeartbeatTimeReference" then
+                        return tick()
+                    end
+                end
+
+                -- Anti-Kick: 攔截屬性訪問式 Kick
+                if env_global.AntiKickEnabled and self == lp and key == "Kick" then
+                    if not IsRealRequest() then
+                        return newcclosure(function() 
+                            warn("[Halol Anti-Kick] 攔截到屬性訪問式 Kick")
+                            return nil 
+                        end)
+                    end
+                end
+            end
+            
+            -- 保護 Hook 本身不被 __index 偵測
+            local success, result = pcall(oldIndex, self, key)
+            return success and result or nil
+        end))
+        
+        -- 2. 限制 Remote 發送頻率與早鳥攔截（擴充關鍵字與 Anti-Kick/Anti-Report）
+        local lastRemoteTime = {}
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            if not checkcaller() then
+                -- Anti-Kick: 攔截標準 Kick
+                if env_global.AntiKickEnabled and method == "Kick" and self == lp then
+                    warn("[Halol Anti-Kick] 攔截到標準 Kick 調用！")
+                    return nil
+                end
+
+                if (method == "FireServer" or method == "InvokeServer") then
+                    local remote = tostring(self)
+                    local remoteName = remote:lower()
+                    local now = tick()
+                    
+                    -- 檢查是否為惡意/反外掛請求
+                    local is_bad_request = not IsRealRequest()
+                    
+                    -- Anti-Report & Anti-Detection 關鍵字攔截
+                    local block_keywords = {
+                        "cheat", "exploit", "detect", "flag", "report", "scan", "ban", "kick",
+                        "ac", "anticheat", "security", "vanguard", "watcher", "logger", 
+                        "telemetry", "screenshot", "capture", "abuse"
+                    }
+
+                    for _, kw in ipairs(block_keywords) do
+                        if remoteName:find(kw) then
+                            if is_bad_request or env_global.AntiReportEnabled or env_global.AntiKickEnabled then
+                                warn("[Halol Protection] 攔截到敏感 Remote: " .. remote)
+                                return nil
+                            end
+                        end
+                    end
+
+                    -- Anti-600: 限制發送頻率
+                    if lastRemoteTime[remote] and (now - lastRemoteTime[remote]) < 0.05 then
+                        return nil 
+                    end
+                    lastRemoteTime[remote] = now
+                end
+            end
+            return oldNamecall(self, ...)
+        end))
+        
+        -- 3. 攔截 debug.getinfo 防止追蹤腳本
+        local oldGetInfo
+        oldGetInfo = hookfunction(debug.getinfo, newcclosure(function(f, ...)
+            local info = oldGetInfo(f, ...)
+            if not checkcaller() and info and info.source and (info.source:find("Halol") or info.source:find("Combat")) then
+                info.source = "=[C]"
+                info.what = "C"
+                info.name = "hidden"
+            end
+            return info
+        end))
+    end)
+    
+    if not ok then
+        warn("[Halol] 強力注入偽裝初始化失敗: " .. tostring(err))
+    else
+        print("[Halol] 強力注入偽裝、Anti-Kick 與 Anti-600 系統已啟動")
+    end
 end
 
 -- [[ 配置與狀態 ]]
@@ -371,111 +477,9 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- [[ 超強攔截舉報器 (Super Anti-Report) ]]
-local function SetupSuperAntiReport()
-    if not hookmetamethod then return end
-    
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-        
-        -- 只有當偵測到是「非正常請求」或是敏感 Remote 時才攔截
-        if (method == "FireServer" or method == "InvokeServer") and env_global.AntiReportEnabled then
-            if not IsRealRequest() then
-                warn("[Halol Super-AntiReport] 攔截到來自反外掛的 Remote 調用")
-                return nil
-            end
-
-            local remoteName = tostring(self):lower()
-            -- 精簡關鍵字，避免誤傷正常心跳包
-            local report_keywords = {
-                "report", "abuse", "cheat", "telemetry", "screenshot", "capture"
-            }
-            
-            -- 檢查 Remote 名稱
-            for _, word in ipairs(report_keywords) do
-                if remoteName:find(word) then
-                    warn("[Halol Super-AntiReport] 攔截到舉報 Remote: " .. tostring(self))
-                    return nil 
-                end
-            end
-        end
-        
-        return oldNamecall(self, ...)
-    end))
-    
-    warn("[Halol] 超強攔截舉報器已啟動 (全時守護模式)")
-end
-
 -- [[ 反偵測系統 (Anti-Cheat Bypass) ]]
-local function SetupAntiKick()
-    if not hookmetamethod then return end
-    
-    -- 1. 攔截 __namecall (最常見的 Kick 方式)
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        
-        if env_global.AntiKickEnabled then
-            -- 標準 Kick 攔截
-            if method == "Kick" and self == lp then
-                warn("[Halol Anti-Kick] 攔截到標準 Kick 調用！")
-                return nil
-            end
-            
-            -- 攔截來自伺服器的自定義 Kick Remote
-            if method == "FireServer" or method == "InvokeServer" then
-                local remoteName = tostring(self):lower()
-                if (remoteName:find("kick") or remoteName:find("ban")) and not IsRealRequest() then
-                    warn("[Halol Anti-Kick] 攔截到可疑 Remote: " .. tostring(self))
-                    return nil
-                end
-            end
-        end
-        
-        return oldNamecall(self, ...)
-    end))
-
-    -- 2. 攔截 __index (防止通過屬性獲取 Kick 函數)
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
-        if env_global.AntiKickEnabled and self == lp and key == "Kick" then
-            if not IsRealRequest() then
-                return newcclosure(function() 
-                    warn("[Halol Anti-Kick] 攔截到屬性訪問式 Kick")
-                    return nil 
-                end)
-            end
-        end
-        return oldIndex(self, key)
-    end))
-
-    -- 3. 防止 261 斷線 (Heartbeat Protection)
-    -- 如果腳本執行時間過長，RunService 會被掛起導致 261。
-    -- 這裡確保我們不在主線程做過多耗時操作。
-    task.spawn(function()
-        local lastTick = tick()
-        while true do
-            task.wait(1)
-            if env_global.AntiKickEnabled then
-                local currentTick = tick()
-                if currentTick - lastTick > 5 then
-                    warn("[Halol Anti-261] 檢測到網絡延遲過高，正在嘗試優化環境...")
-                    -- 可以在這裡做一些環境清理
-                end
-                lastTick = currentTick
-            end
-        end
-    end)
-
-    warn("[Halol] Anti-Kick & Anti-261 強化模組已就緒")
-end
-
 local function SetupAntiCheatBypass()
     task.wait(0.5) -- 增加小延遲確保穩定
-    SetupSuperAntiReport()
-    SetupAntiKick()
     -- 可以在這裡添加更多反偵測邏輯
 end
 
@@ -570,7 +574,7 @@ local function SetupMagicBullet()
             end
             
             -- 2. 攔截反外掛與檢舉 Remote (阻止上報)
-            if (env_global.SpoofRemote or env_global.AntiReportEnabled) and method == "FireServer" then
+            if (env_global.SpoofRemote or env_global.AntiReportEnabled or env_global.AntiKickEnabled) and (method == "FireServer" or method == "InvokeServer") then
                 if not IsRealRequest() then
                     return nil
                 end
@@ -2000,7 +2004,6 @@ function Combat.Init(Gui, Notify, CatFunctions)
         SetupAimAtMeDetection(Notify)
         SetupESP()
         SetupSilentAim()
-        SetupAntiKick()
     end)
 
     Notify("強力注入", "戰鬥模組已完成環境偽裝並啟動延遲優化 (Anti-600)", 3)
