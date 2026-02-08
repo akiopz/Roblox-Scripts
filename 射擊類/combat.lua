@@ -138,6 +138,15 @@ end
 -- [[ 強力注入與偽裝系統 (含 Anti-600 延遲優化與 Anti-Kick) ]]
 local function SetupAdvancedProtection()
     if not hookmetamethod or env_global.__HalolAdvancedProtectionActive then return end
+    
+    -- 檢測是否為已知不穩定執行器 (如 Solara)
+    local executor = (identifyexecutor or getexecutorname or function() return "Unknown" end)()
+    if executor:find("Solara") then
+        print("[Halol] 偵測到 Solara 執行器，將使用相容模式 (跳過 Metatable Hooks)")
+        env_global.__HalolAdvancedProtectionActive = true
+        return
+    end
+
     env_global.__HalolAdvancedProtectionActive = true
     
     -- 啟動掃描保護

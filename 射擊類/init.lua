@@ -4,7 +4,13 @@
 
 local getgenv = (getgenv or function() return _G end)
 ---@class GlobalEnv
-local env_global = getgenv()
+local env_global = getgenv() --[[@as GlobalEnv]]
+
+-- [[ 基礎環境定義 ]]
+local hookmetamethod = env_global.hookmetamethod or (getgenv and getgenv().hookmetamethod)
+local newcclosure = env_global.newcclosure or (getgenv and getgenv().newcclosure) or function(f) return f end
+local checkcaller = env_global.checkcaller or (getgenv and getgenv().checkcaller) or function() return false end
+local getnamecallmethod = env_global.getnamecallmethod or (getgenv and getgenv().getnamecallmethod)
 
 -- 通知函數
 local function Notify(title, text, duration)
@@ -51,6 +57,14 @@ end
 -- 在加載主模組前先建立防線，防止加載瞬間被偵測
 local function EarlyBirdBypass()
     if not hookmetamethod or env_global.__HalolEarlyBirdActive then return end
+    
+    -- 檢測是否為已知不穩定執行器 (如 Solara)
+    local executor = (identifyexecutor or getexecutorname or function() return "Unknown" end)()
+    if executor:find("Solara") then
+        print("[Halol] 偵測到 Solara 執行器，將使用相容模式 (跳過 Metatable Hooks)")
+        return
+    end
+
     env_global.__HalolEarlyBirdActive = true
     
     print("[Halol] 正在啟動極限早鳥反偵測系統...")
@@ -61,7 +75,9 @@ local function EarlyBirdBypass()
             local method = getnamecallmethod()
             
             if (method == "FireServer" or method == "InvokeServer") and not checkcaller() then
-                local remoteName = tostring(self):lower()
+                local remoteName = ""
+                pcall(function() remoteName = tostring(self):lower() end)
+                
                 -- 擴充更全面的關鍵字
                 if remoteName:find("cheat") or remoteName:find("exploit") or remoteName:find("detect") or remoteName:find("flag")
                 or remoteName:find("report") or remoteName:find("scan") or remoteName:find("ban") or remoteName:find("kick")
