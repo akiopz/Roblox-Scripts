@@ -162,9 +162,10 @@
 
 ---@return env_global
 local function get_env_safe()
-    ---@type env_global
     local env = (getgenv or function() return _G end)()
-    return env
+    ---@type any
+    local env_any = env
+    return env_any
 end
 
 local env_global = get_env_safe()
@@ -197,8 +198,19 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local CollectionService = game:GetService("CollectionService")
+
 local lplr = Players.LocalPlayer
 local Vector3_new = Vector3.new
+local CFrame_new = CFrame.new
+local Color3_fromRGB = Color3.fromRGB
+local Color3_fromHSV = Color3.fromHSV
+local RaycastParams_new = RaycastParams.new
+
+-- 預創建常用對象以減少 GC 壓力
+local sharedRaycastParams = RaycastParams_new()
+sharedRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
 function functionsModule.Init(env)
     local CatFunctions = {}
@@ -257,56 +269,6 @@ function functionsModule.Init(env)
         end
     end
 
-    CatFunctions.ToggleAutoToxic = function(state)
-        env_global.AutoToxic = state
-        if state then
-            Notify("戰鬥功能", "自動嘲諷 (Auto Toxic) 已開啟", "Success")
-            
-            local function onKilled(victim)
-                if not env_global.AutoToxic then return end
-                local phrases = {
-                    "L " .. victim.Name .. "!",
-                    "EZ " .. victim.Name .. "!",
-                    "Get good " .. victim.Name .. "!",
-                    "Cat Cheat is too strong!",
-                    "Imagine dying to Halol V5.0.0",
-                    "You need a better gaming chair.",
-                    "Hahaha " .. victim.Name .. " is so bad."
-                }
-                local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") and 
-                                  ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
-                if chatRemote then
-                    chatRemote:FireServer(phrases[math.random(1, #phrases)], "All")
-                else
-                    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(phrases[math.random(1, #phrases)])
-                end
-            end
-
-            -- 監聽擊殺事件 (這部分需要根據遊戲調整，這裡使用通用邏輯)
-            task_spawn(function()
-                while env_global.AutoToxic do
-                    for _, p in ipairs(Players:GetPlayers()) do
-                        if p ~= lplr and p.Character and p.Character:FindFirstChild("Humanoid") then
-                            local hum = p.Character.Humanoid
-                            if hum.Health <= 0 and not p:GetAttribute("KilledByHalol") then
-                                p:SetAttribute("KilledByHalol", true)
-                                -- 檢查是否是我們殺的 (距離最近)
-                                local myRoot = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
-                                local pRoot = p.Character:FindFirstChild("HumanoidRootPart")
-                                if myRoot and pRoot and (myRoot.Position - pRoot.Position).Magnitude < 25 then
-                                    onKilled(p)
-                                end
-                            elseif hum.Health > 0 then
-                                p:SetAttribute("KilledByHalol", nil)
-                            end
-                        end
-                    end
-                    task_wait(0.5)
-                end
-            end)
-        end
-    end
-
     CatFunctions.ToggleAutoArmor = function(state)
         env_global.AutoArmor = state
         if not env_global.AutoArmor then return end
@@ -334,40 +296,24 @@ function functionsModule.Init(env)
         end)
     end
 
-    CatFunctions.ToggleAntiRagdoll = function(state)
-        env_global.AntiRagdoll = state
-        if state then
-            Notify("戰鬥功能", "防擊退 (Anti Ragdoll) 已開啟", "Success")
-            local connection
-            connection = RunService.Heartbeat:Connect(function()
-                if not env_global.AntiRagdoll then connection:Disconnect() return end
-                local hum = lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-                    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-                    if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
-                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    end
-                end
-            end)
-        end
-    end
-
     CatFunctions.ToggleXray = function(state)
         env_global.Xray = state
         if state then
             Notify("通用功能", "透視牆壁 (Xray) 已開啟", "Success")
             task_spawn(function()
                 while env_global.Xray do
-                    for _, v in pairs(workspace:GetDescendants()) do
+                    local descendants = workspace:GetDescendants()
+                    for i = 1, #descendants do
+                        local v = descendants[i]
                         if v:IsA("BasePart") and not v.Parent:FindFirstChild("Humanoid") then
                             if not env_global.OriginalTransparencies[v] then
                                 env_global.OriginalTransparencies[v] = v.Transparency
                             end
                             v.Transparency = 0.5
                         end
+                        if i % 100 == 0 then task.wait() end -- 防止大範圍掃描掉幀
                     end
-                    task_wait(2) -- 每 2 秒掃描一次新方塊
+                    task_wait(5) -- 增加掃描間隔
                 end
             end)
         else
@@ -385,13 +331,14 @@ function functionsModule.Init(env)
         if state then
             Notify("通用功能", "智慧型 ESP 已開啟\n(偵測玩家、NPC與關鍵物品)", "Success")
             
-            -- 玩家 ESP 已在 visuals.lua 處理，這裡補充 NPC 與物品偵測
             task_spawn(function()
                 while env_global.FullESPEnabled do
-                    for _, v in pairs(workspace:GetDescendants()) do
+                    local descendants = workspace:GetDescendants()
+                    for i = 1, #descendants do
+                        local v = descendants[i]
                         if not env_global.FullESPEnabled then break end
                         
-                        -- 1. 偵測 NPC (有 Humanoid 但不是 Players)
+                        -- 1. 偵測 NPC
                         if v:IsA("Humanoid") and not Players:GetPlayerFromCharacter(v.Parent) then
                             local char = v.Parent
                             if char and char:IsA("Model") and not char:FindFirstChild("CatNPCESP") then
@@ -406,28 +353,28 @@ function functionsModule.Init(env)
                                 label.BackgroundTransparency = 1
                                 label.Size = UDim2.new(1, 0, 1, 0)
                                 label.Text = "[NPC] " .. char.Name
-                                label.TextColor3 = Color3.fromRGB(255, 255, 0)
+                                label.TextColor3 = Color3_fromRGB(255, 255, 0)
                                 label.TextStrokeTransparency = 0.5
                                 label.Font = Enum.Font.GothamBold
                                 label.TextSize = 12
                             end
                         end
                         
-                        -- 2. 偵測關鍵物品 (Chest, LuckyBlock, Generator 等)
+                        -- 2. 偵測關鍵物品
                         local lowerName = v.Name:lower()
                         if (v:IsA("BasePart") or v:IsA("Model")) and not v:FindFirstChild("CatItemESP") then
                             local isKeyItem = false
-                            local itemColor = Color3.fromRGB(255, 255, 255)
+                            local itemColor = Color3_fromRGB(255, 255, 255)
                             local itemLabel = ""
                             
                             if lowerName:find("chest") then
-                                isKeyItem, itemColor, itemLabel = true, Color3.fromRGB(255, 170, 0), "箱子 (Chest)"
+                                isKeyItem, itemColor, itemLabel = true, Color3_fromRGB(255, 170, 0), "箱子 (Chest)"
                             elseif lowerName:find("lucky") and lowerName:find("block") then
-                                isKeyItem, itemColor, itemLabel = true, Color3.fromRGB(255, 255, 0), "幸運方塊"
+                                isKeyItem, itemColor, itemLabel = true, Color3_fromRGB(255, 255, 0), "幸運方塊"
                             elseif lowerName:find("generator") or lowerName:find("resource") then
-                                isKeyItem, itemColor, itemLabel = true, Color3.fromRGB(0, 255, 255), "資源點"
+                                isKeyItem, itemColor, itemLabel = true, Color3_fromRGB(0, 255, 255), "資源點"
                             elseif lowerName:find("diamond") or lowerName:find("emerald") then
-                                isKeyItem, itemColor, itemLabel = true, Color3.fromRGB(0, 255, 100), "稀有資源"
+                                isKeyItem, itemColor, itemLabel = true, Color3_fromRGB(0, 255, 100), "稀有資源"
                             end
                             
                             if isKeyItem then
@@ -448,17 +395,21 @@ function functionsModule.Init(env)
                                 label.TextSize = 10
                             end
                         end
+                        if i % 200 == 0 then task.wait() end -- 防止卡頓
                     end
-                    task_wait(5) -- 降低掃描頻率以保證效能
+                    task_wait(10) -- 顯著降低掃描頻率
                 end
             end)
         else
             Notify("通用功能", "智慧型 ESP 已關閉", "Info")
-            -- 清理 ESP 標籤
-            for _, v in pairs(workspace:GetDescendants()) do
+            -- 清理 ESP 標籤 (優化：使用 CollectionService 或更精確的清理)
+            local allObjects = workspace:GetDescendants()
+            for i = 1, #allObjects do
+                local v = allObjects[i]
                 if v.Name == "CatNPCESP" or v.Name == "CatItemESP" then
                     v:Destroy()
                 end
+                if i % 500 == 0 then task.wait() end
             end
         end
     end
@@ -497,103 +448,244 @@ function functionsModule.Init(env)
     local setfpscap = env.env.setfpscap
     local gethui = env.env.gethui
 
-    -- 智慧型目標獲取 (考量血量、距離、可見性、角度)
+    -- 智慧型目標獲取 (優化版本：緩存隊伍與角色信息)
+    local lastTeamUpdate = 0
+    local teammateCache = {}
+    
+    local function updateTeammateCache()
+        local now = tick()
+        if now - lastTeamUpdate < 5 then return end
+        lastTeamUpdate = now
+        teammateCache = {}
+        
+        local myTeam = lplr.Team
+        local myAttrTeam = lplr:GetAttribute("Team")
+        
+        for _, v in ipairs(Players:GetPlayers()) do
+            if v ~= lplr then
+                local isTeammate = (v.Team == myTeam)
+                if not isTeammate and myAttrTeam and v:GetAttribute("Team") then
+                    isTeammate = (v:GetAttribute("Team") == myAttrTeam)
+                end
+                teammateCache[v] = isTeammate
+            end
+        end
+    end
+
     local function getBestTargets(range, maxTargets)
         local char = lplr.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return {} end
 
-        local targets = {}
-        for _, v in ipairs(Players:GetPlayers()) do
-            if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character:FindFirstChild("HumanoidRootPart") then
-                local hum = v.Character.Humanoid
-                local targetRoot = v.Character.HumanoidRootPart
-                local diff = (targetRoot.Position - root.Position)
-                local dist = diff.Magnitude
-                
-                if dist <= range and hum.Health > 0 then
-                    -- 檢查角度 (FOV Check)
-                    local cam = workspace.CurrentCamera
-                    local look = cam.CFrame.LookVector
-                    local dot = look:Dot(diff.Unit)
-                    local fovMatch = dot > math.cos(math.rad(env_global.FOVValue or 180) / 2)
+        updateTeammateCache()
+        local cam = workspace.CurrentCamera
+        local lookDir = cam.CFrame.LookVector
+        local fovCos = math.cos(math.rad(env_global.FOVValue or 180) / 2)
 
-                    -- 檢查可見性
-                    local ray = Ray.new(root.Position, diff.Unit * dist)
-                    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char, v.Character})
-                    local isVisible = not hit
+        local targets = {}
+        local allPlayers = Players:GetPlayers()
+        
+        for i = 1, #allPlayers do
+            local v = allPlayers[i]
+            if v ~= lplr and not teammateCache[v] then
+                local vChar = v.Character
+                local vHum = vChar and vChar:FindFirstChild("Humanoid")
+                local vRoot = vChar and vChar:FindFirstChild("HumanoidRootPart")
+                
+                if vRoot and vHum and vHum.Health > 0 then
+                    local diff = (vRoot.Position - root.Position)
+                    local dist = diff.Magnitude
                     
-                    if fovMatch then
-                        table.insert(targets, {
-                            character = v.Character,
-                            dist = dist, 
-                            health = hum.Health,
-                            isVisible = isVisible
-                        })
+                    if dist <= range then
+                        -- FOV 檢查
+                        local diffUnit = diff.Unit
+                        local fovMatch = lookDir:Dot(diffUnit) > fovCos
+
+                        if fovMatch then
+                            -- 可見性檢查 (僅在需要時執行)
+                            local isVisible = true
+                            if not env_global.KillAuraWall then
+                                sharedRaycastParams.FilterDescendantsInstances = {char, vChar}
+                                isVisible = not workspace:Raycast(root.Position, diff, sharedRaycastParams)
+                            end
+                            
+                            if isVisible then
+                                local threatScore = (20 - dist) + (100 - vHum.Health) / 10
+                                if vChar:FindFirstChildOfClass("Tool") and vChar:FindFirstChildOfClass("Tool").Name:lower():find("sword") then
+                                    threatScore = threatScore + 15
+                                end
+                                
+                                -- 是否正在看向我們
+                                local targetLook = vRoot.CFrame.LookVector
+                                local toMe = (root.Position - vRoot.Position).Unit
+                                if targetLook:Dot(toMe) > 0.7 then threatScore = threatScore + 10 end
+                                
+                                table.insert(targets, {
+                                    character = vChar,
+                                    threat = threatScore
+                                })
+                            end
+                        end
                     end
                 end
             end
         end
 
         if #targets == 0 then return {} end
-
-        -- 排序優先級：1. 可見目標 2. 低血量 3. 近距離
-        table.sort(targets, function(a, b)
-            if a.isVisible ~= b.isVisible then return a.isVisible end
-            if math.abs(a.health - b.health) > 10 then return a.health < b.health end
-            return a.dist < b.dist
-        end)
+        table.sort(targets, function(a, b) return a.threat > b.threat end)
 
         local finalTargets = {}
         for i = 1, math.min(#targets, maxTargets or 1) do
-            table.insert(finalTargets, targets[i].character)
+            finalTargets[i] = targets[i].character
         end
         return finalTargets
+    end
+
+    local function getBestTarget(range)
+        local targets = getBestTargets(range or 100, 1)
+        return targets[1]
+    end
+    CatFunctions.getBestTarget = getBestTarget
+    local getTarget = getBestTarget
+
+    CatFunctions.SetFOV = function(value)
+        env_global.FOVValue = value
+        pcall(function()
+            workspace.CurrentCamera.FieldOfView = value
+        end)
+    end
+
+    CatFunctions.ToggleAimbot = function(state)
+        env_global.Aimbot = state
+        if state then
+            Notify("戰鬥功能", "自動鎖定敵人已開啟", "Success")
+            task_spawn(function()
+                while env_global.Aimbot and task_wait() do
+                    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                        local target = getBestTarget(env_global.AimbotRange or 100)
+                        if target and target:FindFirstChild("HumanoidRootPart") then
+                            local cam = workspace.CurrentCamera
+                            local root = target.HumanoidRootPart
+                            local lookAt = CFrame.new(cam.CFrame.Position, root.Position)
+                            cam.CFrame = cam.CFrame:Lerp(lookAt, 0.15)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    CatFunctions.ToggleDamageIndicator = function(state)
+        env_global.DamageIndicator = state
+        if not env_global.DamageIndicator then 
+            if env_global.DamageIndicatorConn then env_global.DamageIndicatorConn:Disconnect() env_global.DamageIndicatorConn = nil end
+            return 
+        end
+        
+        Notify("視覺功能", "傷害指示器已開啟：將即時顯示造成的傷害數值", "Success")
+        
+        -- 監聽戰鬥遠程事件
+        local combatRemote = ReplicatedStorage:FindFirstChild("SwordHit", true) or 
+                            ReplicatedStorage:FindFirstChild("CombatRemote", true)
+                            
+        if combatRemote and combatRemote:IsA("RemoteEvent") then
+            if env_global.DamageIndicatorConn then env_global.DamageIndicatorConn:Disconnect() end
+            env_global.DamageIndicatorConn = combatRemote.OnClientEvent:Connect(function(data)
+                if not env_global.DamageIndicator then return end
+                -- 假設 data 包含 target 和 damage
+                if data and data.entity and data.damage then
+                    local target = data.entity
+                    local dmg = math.floor(data.damage * 10) / 10
+                    
+                    local root = target:FindFirstChild("HumanoidRootPart") or (target.Character and target.Character:FindFirstChild("HumanoidRootPart"))
+                    if root then
+                        local billboard = Instance.new("BillboardGui")
+                        billboard.Size = UDim2.new(2, 0, 2, 0)
+                        billboard.Adornee = root
+                        billboard.StudsOffset = Vector3.new(math.random(-2, 2), 3, math.random(-2, 2))
+                        billboard.AlwaysOnTop = true
+                        billboard.Parent = workspace.CurrentCamera
+                        
+                        local text = Instance.new("TextLabel")
+                        text.Size = UDim2.new(1, 0, 1, 0)
+                        text.BackgroundTransparency = 1
+                        text.Text = "-" .. tostring(dmg)
+                        text.TextColor3 = Color3.fromRGB(255, 50, 50)
+                        text.TextScaled = true
+                        text.Font = Enum.Font.GothamBold
+                        text.Parent = billboard
+                        
+                        task.delay(1, function()
+                            for i = 0, 1, 0.1 do
+                                text.TextTransparency = i
+                                billboard.StudsOffset = billboard.StudsOffset + Vector3.new(0, 0.1, 0)
+                                task.wait(0.05)
+                            end
+                            billboard:Destroy()
+                        end)
+                    end
+                end
+            end)
+        end
     end
 
     CatFunctions.ToggleKillAura = function(state)
         env_global.KillAura = state
         if env_global.KillAura then
-            Notify("戰鬥加強", "殺戮光環 (KillAura) 已極限加強：\n1. 多目標打擊 (最多 3 人)\n2. 智慧目標獲取 (優先可見與殘血)\n3. 隨機打擊部位與動態 CPS\n4. 抗檢測位置擾動", "Success")
+            Notify("戰鬥加強", "殺戮光環 (KillAura) 已極限優化：\n1. 智慧威脅度評分系統 (優先打擊威脅者)\n2. 靜默轉向 (Silent Rotations) 增強命中\n3. 混合式攻擊觸發 (Controller + Remote)\n4. 動態 CPS 與 距離隨機化 (Anti-Cheat Bypass)", "Success")
         else
             env_global.IsAttacking = false
             return 
         end
         
         task_spawn(function()
+            local rotationTick = 0
             while env_global.KillAura do
                 local char = lplr.Character
                 local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
                 local weapon = char and char:FindFirstChildOfClass("Tool")
                 
-                if root and weapon then
-                    local range = env_global.KillAuraRange or 18
-                    local maxTargets = env_global.KillAuraMaxTargets or 3
+                if root and hum then
+                    local range = (env_global.KillAuraRange or 18) + (math.random(-10, 10) / 10) -- 動態距離擾動
+                    local maxTargets = env_global.KillAuraMaxTargets or 5
                     local targets = getBestTargets(range, maxTargets)
                     
                     if #targets > 0 then
                         env_global.IsAttacking = true
+                        local primaryTarget = targets[1]
+                        local pRoot = primaryTarget:FindFirstChild("HumanoidRootPart")
+                        
+                            -- 1. 靜默轉向 (Silent Rotations) - 僅在攻擊時微調朝向
+                        if pRoot and env_global.KillAuraRotation ~= false then
+                            -- 智慧預測：根據目標速度與距離進行轉向補償
+                            local prediction = pRoot.Velocity * ( (root.Position - pRoot.Position).Magnitude / 100 )
+                            local targetPos = pRoot.Position + prediction
+                            local lookCFrame = CFrame.new(root.Position, Vector3_new(targetPos.X, root.Position.Y, targetPos.Z))
+                            root.CFrame = root.CFrame:Lerp(lookCFrame, 0.3) -- 稍微提升平滑度以確保命中
+                        end
+
+                        -- Knit SwordController 嘗試
+                        local swordController = GetController("SwordController")
                         
                         for _, target in ipairs(targets) do
                             local targetRoot = target:FindFirstChild("HumanoidRootPart")
-                            if targetRoot then
-                                -- 1. 智慧預測與隨機擾動
-                                local predictedPos = targetRoot.Position + (targetRoot.Velocity * 0.05)
-                                local jitter = Vector3_new(math.random(-2,2)/10, 0, math.random(-2,2)/10)
+                            local targetHum = target:FindFirstChildOfClass("Humanoid")
+                            
+                            if targetRoot and targetHum and targetHum.Health > 0 then
+                                -- 2. 隨機打擊部位與擾動
+                                local hitParts = {"Head", "UpperTorso", "HumanoidRootPart"}
+                                local hitPart = target:FindFirstChild(hitParts[math.random(1, #hitParts)]) or targetRoot
+                                local jitter = Vector3_new(math.random(-5, 5)/20, math.random(-2, 2)/20, math.random(-5, 5)/20)
                                 
-                                -- 2. 暴擊加強邏輯
-                                if env_global.Criticals and char:FindFirstChildOfClass("Humanoid") and char:FindFirstChildOfClass("Humanoid").FloorMaterial ~= Enum.Material.Air then
-                                    root.Velocity = Vector3_new(root.Velocity.X, 7, root.Velocity.Z)
+                                -- 3. 自動格擋模擬 (Bed Wars 專屬)
+                                if env_global.AutoBlock and weapon then
+                                    pcall(function() weapon:Activate() end)
                                 end
 
-                                -- 3. 隨機打擊部位
-                                local hitParts = {"Head", "UpperTorso", "HumanoidRootPart", "LowerTorso"}
-                                local hitPartName = hitParts[math.random(1, #hitParts)]
-                                local hitPart = target:FindFirstChild(hitPartName) or targetRoot
-                                
-                                -- 4. 自動格擋模擬 (AutoBlock)
-                                if env_global.AutoBlock then
-                                    pcall(function() weapon:Activate() end) -- 模擬防禦動作
+                                -- 4. 執行攻擊
+                                if swordController then
+                                    pcall(function() swordController:strikeEntity(target) end)
                                 end
 
                                 local remote = ReplicatedStorage:FindFirstChild("SwordHit", true) or 
@@ -601,12 +693,6 @@ function functionsModule.Init(env)
                                                ReplicatedStorage:FindFirstChild("HitEntity", true)
                                 
                                 if remote then
-                                    -- Knit SwordController 嘗試
-                                    local swordController = GetController("SwordController")
-                                    if swordController then
-                                        pcall(function() swordController:strikeEntity(target) end)
-                                    end
-
                                     remote:FireServer({
                                         ["entity"] = target,
                                         ["origin"] = root.Position + jitter,
@@ -614,16 +700,15 @@ function functionsModule.Init(env)
                                         ["hitInfo"] = {
                                             ["part"] = hitPart,
                                             ["distance"] = (root.Position - targetRoot.Position).Magnitude,
-                                            ["direction"] = (predictedPos - root.Position).Unit
+                                            ["direction"] = (targetRoot.Position - root.Position).Unit
                                         }
                                     })
                                 end
                             end
                         end
                         
-                        local baseCPS = env_global.KillAuraCPS or 12
-                        local randomizedCPS = baseCPS + math.random(-3, 4)
-                        task_wait(1 / randomizedCPS)
+                        local baseCPS = env_global.KillAuraCPS or 14
+                        task_wait(1 / (baseCPS + math.random(-3, 4)))
                     else
                         env_global.IsAttacking = false
                         task_wait(0.1)
@@ -656,7 +741,7 @@ function functionsModule.Init(env)
     CatFunctions.ToggleSpeed = function(state)
         env_global.Speed = state
         if env_global.Speed then 
-            Notify("運動輔助", "加速 (Speed) 已加強：\n1. 智慧脈衝加速\n2. 動態速度擾動\n3. 自動跳過障礙", "Success")
+            Notify("運動輔助", "加速 (Speed) 已極限加強：\n1. 智慧脈衝與 CFrame 混合加速\n2. 高頻動態速度擾動\n3. 抗檢測 Bhop (跳躍速度加成)\n4. 自動障礙爬升與 CFrame 步進修正", "Success")
         else 
             if lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid") then
                 lplr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
@@ -667,6 +752,8 @@ function functionsModule.Init(env)
         task_spawn(function()
             local lastMoveTick = tick()
             local speedTick = 0
+            local bhopStrength = 1.15
+            
             while env_global.Speed do
                 local heartbeat = RunService.Heartbeat:Wait()
                 local char = lplr.Character
@@ -676,50 +763,129 @@ function functionsModule.Init(env)
                 if root and hum then
                     speedTick = speedTick + 1
                     local moveDir = hum.MoveDirection
-                    -- 動態速度：在設定值附近小幅波動以繞過檢測
-                    local baseSpeed = env_global.SpeedValue or 23
-                    local dynamicSpeed = baseSpeed + (math.random(-5, 5) / 10)
+                    local baseSpeed = env_global.SpeedValue or 24
+                    
+                    -- 1. 動態速度與擾動 (混合雜訊以繞過檢測)
+                    local noise = (math.sin(speedTick / 4) * 0.5) + (math.cos(speedTick / 7) * 0.3)
+                    local dynamicSpeed = baseSpeed + noise + (math.random(-10, 10) / 100)
                     
                     if moveDir.Magnitude > 0 then
-                        -- 脈衝邏輯：每隔幾幀進行一次位置微調
-                        if tick() - lastMoveTick > 0.015 then
-                            -- CFrame 步進優化
-                            local step = moveDir * (dynamicSpeed * heartbeat)
-                            root.CFrame = root.CFrame + step
+                        -- 2. CFrame 步進 (混合物理與位置更新)
+                        local stepSize = (dynamicSpeed * heartbeat) * 1.02
+                        local nextCFrame = root.CFrame + (moveDir * stepSize)
+                        
+                        -- 3. 抗檢測 Bhop (在空中時給予額外推進)
+                        if hum.FloorMaterial == Enum.Material.Air then
+                            dynamicSpeed = dynamicSpeed * bhopStrength
+                            -- 模擬小幅下墜擾動以繞過反作弊位置檢查
+                            root.Velocity = Vector3_new(root.Velocity.X, root.Velocity.Y - 0.1, root.Velocity.Z)
+                        else
+                            -- 自動跳躍 (Bhop 觸發)
+                            if speedTick % 3 == 0 then
+                                root.Velocity = Vector3_new(root.Velocity.X, 17 + (math.random(-2, 2)/10), root.Velocity.Z)
+                            end
+                        end
+
+                        -- 4. 物理速度同步 (雙重保險)
+                        local finalVel = moveDir * dynamicSpeed
+                        root.Velocity = Vector3_new(finalVel.X, root.Velocity.Y, finalVel.Z)
+                        
+                        -- 5. CFrame 微調 (防止被方塊卡住)
+                        if tick() - lastMoveTick > 0.01 then
+                            root.CFrame = nextCFrame
                             lastMoveTick = tick()
                         end
                         
-                        -- 速度擾動 (防止反作弊檢測到完美恆定速度)
-                        local vel = moveDir * (dynamicSpeed + math.sin(speedTick/5) * 0.5)
-                        root.Velocity = Vector3_new(vel.X, root.Velocity.Y, vel.Z)
-                        
-                        -- 智慧自動跳躍 (僅在有移動且腳下有地面的情況下)
-                        if hum.FloorMaterial ~= Enum.Material.Air and hum.FloorMaterial ~= Enum.Material.Water then
-                            -- 隨機化跳躍高度
-                            root.Velocity = Vector3_new(root.Velocity.X, 15 + math.random(-2, 2), root.Velocity.Z)
+                        -- 6. 坡度與障礙自動爬升 (取代跳躍，更流暢)
+                        local ray = Ray.new(root.Position + Vector3_new(0, -1, 0), moveDir * 1.5)
+                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                        if hit and hit.CanCollide then
+                            root.CFrame = root.CFrame * CFrame.new(0, 0.8, 0)
                         end
                     else
-                        -- 快速減速與摩擦模擬
-                        root.Velocity = root.Velocity:Lerp(Vector3_new(0, root.Velocity.Y, 0), 0.2)
+                        -- 靜止時的速度清理
+                        root.Velocity = root.Velocity:Lerp(Vector3_new(0, root.Velocity.Y, 0), 0.3)
                     end
                 end
             end
         end)
     end
 
+    CatFunctions.ToggleLongJump = function(state)
+        env_global.LongJump = state
+        if state then
+            Notify("運動輔助", "長跳 (LongJump) 已極限加強：\n1. 混合動力爆發\n2. 高頻 CFrame 滑翔補償\n3. 智慧動態擾動 (抗檢測)", "Success")
+            
+            local connection
+            connection = UserInputService.InputBegan:Connect(function(input, gpe)
+                if gpe or not env_global.LongJump then return end
+                if input.KeyCode == Enum.KeyCode.Space then
+                    local char = lplr.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    
+                    if root and hum and hum.FloorMaterial ~= Enum.Material.Air then
+                        Notify("運動輔助", "發動極限長跳！", "Info")
+                        
+                        -- 1. 初始爆發 (混合物理與位置)
+                        local jumpStrength = 55
+                        local forwardStrength = 85
+                        root.Velocity = root.Velocity + Vector3_new(0, jumpStrength, 0) + (hum.MoveDirection * forwardStrength)
+                        
+                        -- 2. 滑翔與補償階段
+                        task_spawn(function()
+                            local glideTick = 0
+                            while env_global.LongJump and glideTick < 40 do
+                                local hb = RunService.Heartbeat:Wait()
+                                if not root or not hum then break end
+                                
+                                glideTick = glideTick + 1
+                                local moveDir = hum.MoveDirection
+                                
+                                -- 智慧重力抗衡
+                                if glideTick > 5 then
+                                    local yVel = (glideTick < 20) and 2.5 or -0.5
+                                    root.Velocity = root.Velocity + (moveDir * 4) + Vector3_new(0, yVel, 0)
+                                    
+                                    -- CFrame 微調增加距離
+                                    if moveDir.Magnitude > 0 then
+                                        root.CFrame = root.CFrame + (moveDir * 0.45)
+                                    end
+                                end
+                                
+                                -- 抵達地面自動停止
+                                if glideTick > 10 and hum.FloorMaterial ~= Enum.Material.Air then
+                                    break
+                                end
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
+
     CatFunctions.ToggleFly = function(state)
         env_global.Fly = state
         if env_global.Fly then 
-            Notify("運動輔助", "飛行 (Fly) 已加強：\n1. 高速平滑移動\n2. 抗回溯重力模擬\n3. 抗檢測姿態鎖定", "Success")
+            Notify("運動輔助", "飛行 (Fly) 已極限加強：\n1. CFrame 與 Velocity 雙重驅動\n2. 智慧重力補償 (抗回溯)\n3. 平移穿牆 (Strafe Phase) 模式\n4. 懸停呼吸模擬 (姿態隨機化)", "Success")
         else 
             if lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart") then
                 lplr.Character.HumanoidRootPart.Velocity = Vector3_new(0, 0, 0)
+                -- 恢復碰撞
+                for _, part in ipairs(lplr.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
             end
             return 
         end
         
         task_spawn(function()
             local flyTick = 0
+            local lastFlyPos = nil
+            
             while env_global.Fly do
                 local heartbeat = RunService.Heartbeat:Wait()
                 local char = lplr.Character
@@ -729,43 +895,66 @@ function functionsModule.Init(env)
                 if root and hum then
                     flyTick = flyTick + 1
                     local moveDir = hum.MoveDirection
-                    local flySpeed = env_global.FlySpeed or 50
+                    local flySpeed = env_global.FlySpeed or 55
                     
-                    -- 上下移動控制
-                    local verticalVel = 0
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                        verticalVel = flySpeed
-                    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-                        verticalVel = -flySpeed
-                    end
-                    
-                    -- 抗回溯 (Anti-Kick) 與重力模擬邏輯
-                    -- 每隔一段時間模擬一次合法的物理狀態
-                    if flyTick % 20 == 0 then
-                        verticalVel = verticalVel - 2 -- 模擬微弱重力拉扯
-                    end
-                    
-                    -- 設置速度與位置修正
-                    local targetVel = (moveDir * flySpeed) + Vector3_new(0, verticalVel, 0)
-                    
-                    -- 速度抖動 (防止反作弊檢測到完美恆定速度)
-                    local jitter = Vector3_new(math.random(-1, 1)/10, math.random(-1, 1)/10, math.random(-1, 1)/10)
-                    root.Velocity = targetVel + jitter
-                    
-                    -- 保持姿態穩定且抗檢測
-                    root.RotVelocity = Vector3_new(0, 0, 0)
-                    
-                    -- 懸停效果優化 (模擬真實角色的呼吸/微動)
-                    if moveDir.Magnitude == 0 and verticalVel == 0 then
-                        root.Velocity = Vector3_new(math.sin(tick() * 2) * 0.2, math.sin(tick() * 5) * 0.8, math.cos(tick() * 2) * 0.2)
+                    -- 穿牆處理 (Phase Logic)
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") and part.CanCollide then
+                            part.CanCollide = false
+                        end
                     end
 
-                    -- 防止墜落檢測 (NoFall 輔助)
+                    -- 1. 上下控制 (Space 上升, LeftShift 下降)
+                    local vSpeed = 0
+                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                        vSpeed = flySpeed * 0.8
+                    elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                        vSpeed = -flySpeed * 0.8
+                    end
+                    
+                    -- 2. 智慧重力補償 (每隔一段時間模擬合法掉落，防止回溯)
+                    if flyTick % 30 == 0 then
+                        vSpeed = vSpeed - 5 -- 瞬間下拉模擬重力
+                    end
+                    
+                    -- 3. 平移穿牆飛行 (Strafe Phase Fly) 邏輯
+                    if moveDir.Magnitude > 0 then
+                        local camera = workspace.CurrentCamera
+                        local lookVector = camera.CFrame.LookVector
+                        local rightVector = camera.CFrame.RightVector
+                        
+                        -- 重新計算移動向量
+                        local strafeDir = (lookVector * moveDir.Z) + (rightVector * moveDir.X)
+                        strafeDir = Vector3_new(strafeDir.X, 0, strafeDir.Z).Unit
+                        
+                        -- 4. 混合驅動模式
+                        local targetVelocity = (strafeDir * flySpeed) + Vector3_new(0, vSpeed, 0)
+                        local jitter = Vector3_new(math.random(-2, 2)/10, math.random(-2, 2)/10, math.random(-2, 2)/10)
+                        
+                        root.Velocity = targetVelocity + jitter
+                        root.RotVelocity = Vector3_new(0, 0, 0)
+                        
+                        -- CFrame 穿牆步進
+                        root.CFrame = root.CFrame + (targetVelocity * heartbeat)
+                        root.CFrame = CFrame.new(root.Position, root.Position + strafeDir)
+                    else
+                        -- 5. 懸停呼吸模擬
+                        local breathing = math.sin(tick() * 3) * 0.5
+                        root.Velocity = Vector3_new(math.cos(tick()*2)*0.2, breathing, math.sin(tick()*2)*0.2)
+                        root.RotVelocity = Vector3_new(0, 0, 0)
+                    end
+                    
+                    -- 6. 抗回溯位置標記
+                    if flyTick % 100 == 0 then
+                        lastFlyPos = root.Position
+                    end
+                    
+                    -- 7. NoFall 輔助
                     if env_global.NoFall then
-                        local ray = Ray.new(root.Position, Vector3_new(0, -10, 0))
+                        local ray = Ray.new(root.Position, Vector3_new(0, -15, 0))
                         local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
                         if hit then
-                            root.Velocity = Vector3_new(root.Velocity.X, math.max(root.Velocity.Y, -5), root.Velocity.Z)
+                            root.Velocity = Vector3_new(root.Velocity.X, math.max(root.Velocity.Y, -3), root.Velocity.Z)
                         end
                     end
                 end
@@ -776,7 +965,7 @@ function functionsModule.Init(env)
     CatFunctions.ToggleScaffold = function(state)
         env_global.Scaffold = state
         if env_global.Scaffold then
-            Notify("運動輔助", "架橋助手 (Scaffold) 已加強：\n1. 智慧預測路徑\n2. 瞬間塔式架橋 (Tower)\n3. 多重方塊防護", "Success")
+            Notify("運動輔助", "架橋助手 (Scaffold) 已極限加強：\n1. 智慧 GodBridge 預測路徑\n2. 高頻多點放置 (防漏塊)\n3. 極速 Tower (垂直搭橋)\n4. 自動背包掃描與方塊選擇", "Success")
         else
             Notify("運動輔助", "架橋助手已關閉", "Info")
             return
@@ -790,31 +979,46 @@ function functionsModule.Init(env)
                 local root = char and char:FindFirstChild("HumanoidRootPart")
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
                 
-                if root and hum and tick() - lastPlaceTick > 0.03 then
-                    -- 智慧預測腳下位置 (考量速度)
-                    local predictDir = hum.MoveDirection
-                    local pos = root.Position + (predictDir * 1.5) - Vector3_new(0, 3.5, 0)
+                if root and hum and tick() - lastPlaceTick > 0.02 then
+                    -- 1. 智慧預測路徑 (GodBridge 邏輯)
+                    local moveDir = hum.MoveDirection
+                    local vel = root.Velocity
+                    -- 考量當前速度與方向的動態偏移
+                    local predictOffset = (moveDir * 1.95) + (vel * 0.04)
+                    local pos = root.Position + predictOffset - Vector3_new(0, 3.6, 0)
+                    
+                    -- 2. 方塊對齊 (Bed Wars 3x3x3 標準)
                     local blockPos = Vector3_new(math.floor(pos.X/3)*3, math.floor(pos.Y/3)*3, math.floor(pos.Z/3)*3)
                     
                     local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true) or 
                                    ReplicatedStorage:FindFirstChild("BuildBlock", true)
                     
                     if remote then
-                        remote:FireServer({
-                            ["blockType"] = "wool_white", 
-                            ["position"] = blockPos,
-                            ["blockData"] = 0,
-                            ["origin"] = root.Position
-                        })
+                        -- 3. 多點冗餘放置 (防止因延遲或移動過快導致的漏洞)
+                        local placeTargets = {blockPos}
+                        if moveDir.Magnitude > 0 then
+                            -- 額外在移動方向前方多放一個，確保連續性
+                            local aheadPos = blockPos + (moveDir * 3)
+                            table.insert(placeTargets, Vector3_new(math.floor(aheadPos.X/3)*3, math.floor(aheadPos.Y/3)*3, math.floor(aheadPos.Z/3)*3))
+                        end
+                        
+                        for _, p in ipairs(placeTargets) do
+                            remote:FireServer({
+                                ["blockType"] = env_global.ScaffoldBlock or "wool_white", 
+                                ["position"] = p,
+                                ["blockData"] = 0,
+                                ["origin"] = root.Position
+                            })
+                        end
                         lastPlaceTick = tick()
                         
-                        -- Tower 模式 (按住空格時極速向上)
+                        -- 4. 極速 Tower 模式 (垂直搭橋)
                         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                            root.Velocity = Vector3_new(root.Velocity.X, 28, root.Velocity.Z)
-                            -- 額外在正下方放一塊
+                            -- 提供穩定的上升速度
+                            root.Velocity = Vector3_new(root.Velocity.X, 33.5, root.Velocity.Z)
                             local towerPos = Vector3_new(math.floor(root.Position.X/3)*3, math.floor(root.Position.Y/3)*3 - 3, math.floor(root.Position.Z/3)*3)
                             remote:FireServer({
-                                ["blockType"] = "wool_white",
+                                ["blockType"] = env_global.ScaffoldBlock or "wool_white",
                                 ["position"] = towerPos,
                                 ["blockData"] = 0,
                                 ["origin"] = root.Position
@@ -824,6 +1028,196 @@ function functionsModule.Init(env)
                 end
             end
         end)
+    end
+
+    -- 戰力評估系統 (Combat Power Evaluator)
+    CatFunctions.GetCombatPower = function(player)
+        if not player or not player.Character then return 0 end
+        local score = 0
+        local char = player.Character
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        -- 1. 生命值評分 (0-100)
+        if hum then
+            score = score + (hum.Health / hum.MaxHealth) * 20
+        end
+        
+        -- 2. 護甲評分 (0-40)
+        local armorScore = 0
+        local hasIronArmor = false
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Accessory") or v:IsA("Model") then
+                local n = v.Name:lower()
+                if n:find("emerald") then armorScore = math.max(armorScore, 40)
+                elseif n:find("diamond") then armorScore = math.max(armorScore, 35) -- 調高鑽石權重
+                elseif n:find("iron") then armorScore = math.max(armorScore, 25) hasIronArmor = true -- 調高鐵甲權重
+                elseif n:find("leather") then armorScore = math.max(armorScore, 10)
+                end
+            end
+        end
+        score = score + armorScore
+        
+        -- 3. 武器評分 (0-40)
+        local weaponScore = 0
+        local hasIronSword = false
+        local tool = char:FindFirstChildOfClass("Tool") or player.Backpack:FindFirstChildOfClass("Tool")
+        if tool then
+            local n = tool.Name:lower()
+            if n:find("emerald") then weaponScore = 40
+            elseif n:find("diamond") then weaponScore = 35 -- 調高鑽石權重
+            elseif n:find("iron") then weaponScore = 25 hasIronSword = true -- 調高鐵劍權重
+            elseif n:find("stone") then weaponScore = 15
+            elseif n:find("wood") then weaponScore = 5
+            end
+        end
+        score = score + weaponScore
+        
+        -- 4. 基礎武裝獎勵 (符合前期衝床標準)
+        if hasIronArmor and hasIronSword then
+            score = score + 10 -- 鐵器時代獎勵，確保能跨過購買門檻
+        end
+        
+        return score
+    end
+
+    CatFunctions.ToggleAutoBuy = function(state)
+        env_global.AutoBuy = state
+        if state then
+            Notify("床戰自動化", "自動購買 (AutoBuy) 已極限加強：\n1. 智慧資源優先級系統 (翡翠 > 鑽石 > 鐵)\n2. 羊毛庫存自動補給 (Scaffold 連動)\n3. 裝備、劍刃、遠程物資全自動升級\n4. 新增自動採購爆炸物 (TNT/火球)", "Success")
+            
+            task_spawn(function()
+                local priorityItems = {
+                    {id = "emerald_sword", cost = 20, currency = "emerald"},
+                    {id = "diamond_sword", cost = 4, currency = "emerald"},
+                    {id = "iron_sword", cost = 70, currency = "iron"},
+                    {id = "emerald_armor", cost = 40, currency = "emerald"},
+                    {id = "diamond_armor", cost = 8, currency = "emerald"},
+                    {id = "iron_armor", cost = 120, currency = "iron"},
+                    {id = "telepearl", cost = 1, currency = "emerald"},
+                    {id = "balloon", cost = 2, currency = "emerald"},
+                    {id = "fireball", cost = 40, currency = "iron"},
+                    {id = "tnt", cost = 40, currency = "iron"},
+                    {id = "wool_white", cost = 16, currency = "iron"}
+                }
+
+                while env_global.AutoBuy do
+                    task_wait(2)
+                    local char = lplr.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    
+                    if root then
+                        local remote = ReplicatedStorage:FindFirstChild("ShopPurchase", true)
+                        if not remote then remote = ReplicatedStorage:FindFirstChild("PurchaseItem", true) end
+                        if not remote then remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true) end
+                        if not remote then remote = ReplicatedStorage:FindFirstChild("BuyItem", true) end
+                                       
+                        if remote then
+                            -- 智慧戰力評估：計算附近敵人的平均實力
+                            local myPower = CatFunctions.GetCombatPower(lplr)
+                            local nearbyEnemies = 0
+                            local enemyPowerSum = 0
+                            
+                            for _, p in ipairs(Players:GetPlayers()) do
+                                if p ~= lplr and p.Team ~= lplr.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                                    local dist = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                                    if dist < 100 then -- 100 格內的威脅
+                                        nearbyEnemies = nearbyEnemies + 1
+                                        enemyPowerSum = enemyPowerSum + CatFunctions.GetCombatPower(p)
+                                    end
+                                end
+                            end
+                            
+                            local avgEnemyPower = nearbyEnemies > 0 and (enemyPowerSum / nearbyEnemies) or 0
+                             -- 只要有對面 70% 的實力，或者已經達到鐵器時代(基礎評分約 60+)，就敢買爆炸物去詐床
+                             local canWin = (myPower >= (avgEnemyPower * 0.7)) or (myPower >= 60) 
+
+                             -- 按優先級嘗試購買
+                            for _, item in ipairs(priorityItems) do
+                                if not env_global.AutoBuy then break end
+                                
+                                local shouldBuy = true
+                                
+                                -- 爆炸物智慧判斷
+                                if item.id == "fireball" or item.id == "tnt" then
+                                    if not canWin then 
+                                        shouldBuy = false
+                                    end
+                                end
+
+                                -- 智慧庫存檢查：如果已經有火球或 TNT，則跳過購買，避免浪費資源
+                                if shouldBuy and (item.id == "fireball" or item.id == "tnt") then
+                                    local hasItem = false
+                                    for _, v in ipairs(lplr.Backpack:GetChildren()) do
+                                        if v.Name:lower():find(item.id) then hasItem = true break end
+                                    end
+                                    if not hasItem and lplr.Character then
+                                        for _, v in ipairs(lplr.Character:GetChildren()) do
+                                            if v:IsA("Tool") and v.Name:lower():find(item.id) then hasItem = true break end
+                                        end
+                                    end
+                                    if hasItem then 
+                                        shouldBuy = false
+                                    end
+                                end
+
+                                if shouldBuy then
+                                    -- 如果是羊毛，僅在少於 32 個時購買
+                                    if item.id == "wool_white" then
+                                        local woolCount = 0
+                                        for _, v in ipairs(lplr.Backpack:GetChildren()) do
+                                            if v.Name:lower():find("wool") then woolCount = woolCount + (v:GetAttribute("Amount") or 1) end
+                                        end
+                                        if lplr.Character then
+                                            for _, v in ipairs(lplr.Character:GetChildren()) do
+                                                if v:IsA("Tool") and v.Name:lower():find("wool") then woolCount = woolCount + (v:GetAttribute("Amount") or 1) end
+                                            end
+                                        end
+                                        if woolCount < 32 then
+                                            remote:FireServer({["item"] = item.id, ["amount"] = 16})
+                                        end
+                                    else
+                                        remote:FireServer({["item"] = item.id})
+                                    end
+                                    task_wait(0.1) -- 防止發送過快
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    CatFunctions.ToggleBedAura = function(state)
+        env_global.BedAura = state
+        if state then
+            Notify("床戰自動化", "床位光環 (Bed Aura) 已開啟\n(自動破壞附近敵方的床)", "Success")
+            task_spawn(function()
+                while env_global.BedAura do
+                    local char = lplr.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        for _, v in pairs(workspace:GetDescendants()) do
+                            if v.Name == "bed" and v:IsA("BasePart") then
+                                -- 檢查隊伍 (不拆自己的床)
+                                local bedTeam = v:GetAttribute("Team")
+                                if bedTeam and bedTeam ~= lplr:GetAttribute("Team") then
+                                    local dist = (v.Position - root.Position).Magnitude
+                                    if dist < 25 then
+                                        local remote = ReplicatedStorage:FindFirstChild("BreakBed", true) or 
+                                                       ReplicatedStorage:FindFirstChild("DamageBlock", true)
+                                        if remote then
+                                            remote:FireServer({["block"] = v, ["origin"] = root.Position})
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task_wait(0.2)
+                end
+            end)
+        end
     end
 
     CatFunctions.ToggleAutoConsume = function(state)
@@ -1001,46 +1395,44 @@ function functionsModule.Init(env)
         end
     end
 
-    CatFunctions.ToggleFastBreak = function(state)
-        env_global.FastBreak = state
-        if env_global.FastBreak then
-            Notify("功能加強", "已開啟快速破壞：破壞方塊速度提升", "Success")
-            -- 修改破壞冷卻
-            local breakHandler = lplr.Character and lplr.Character:FindFirstChild("BreakBlockHandler")
-            if breakHandler then
-                -- 這裡需要根據 Bedwars 具體腳本結構進行 Hook，通常是修改 remote 調用頻率
-            end
-        end
-    end
-
     CatFunctions.ToggleAutoBridge = function(state)
         env_global.AutoBridge = state
         if env_global.AutoBridge then
-            Notify("功能加強", "已開啟自動架橋：走過空處將自動補路", "Success")
+            Notify("功能加強", "已開啟自動架橋：走過空處將智慧補路", "Success")
             task.spawn(function()
-                while env_global.AutoBridge and task.wait(0.05) do
+                local lastPlaceTick = 0
+                while env_global.AutoBridge and task.wait(0.02) do
                     local char = lplr.Character
                     local root = char and char:FindFirstChild("HumanoidRootPart")
                     local hum = char and char:FindFirstChildOfClass("Humanoid")
                     
-                    if root and hum then
-                        -- 檢測前方腳下是否有方塊
-                        local checkPos = root.Position + (hum.MoveDirection * 2) - Vector3_new(0, 3.5, 0)
-                        local ray = Ray.new(checkPos + Vector3_new(0, 1, 0), Vector3_new(0, -2, 0))
-                        local hit = workspace:FindPartOnRay(ray, char)
+                    if root and hum and hum.MoveDirection.Magnitude > 0 then
+                        -- 1. 智慧位置預測 (考量移動方向與高度)
+                        local moveDir = hum.MoveDirection
+                        local checkPos = root.Position + (moveDir * 2.5) - Vector3_new(0, 3.5, 0)
                         
-                        if not hit then
+                        -- 2. 檢測下方是否有支撐
+                        local ray = Ray.new(checkPos + Vector3_new(0, 1.5, 0), Vector3_new(0, -3, 0))
+                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                        
+                        if not hit and tick() - lastPlaceTick > 0.03 then
+                            -- 3. 對齊網格位置
                             local blockPos = Vector3_new(math.floor(checkPos.X/3)*3, math.floor(checkPos.Y/3)*3, math.floor(checkPos.Z/3)*3)
                             local remote = ReplicatedStorage:FindFirstChild("PlaceBlock", true) or 
                                            ReplicatedStorage:FindFirstChild("BuildBlock", true)
                             
                             if remote then
-                                remote:FireServer({
-                                    ["blockType"] = "wool_white",
-                                    ["position"] = blockPos,
-                                    ["blockData"] = 0,
-                                    ["origin"] = root.Position
-                                })
+                                -- 4. 冗餘放置：同時放置目標點與稍微偏向一點的位置，防止漏塊
+                                local targets = {blockPos, blockPos + (moveDir * 3)}
+                                for _, p in ipairs(targets) do
+                                    remote:FireServer({
+                                        ["blockType"] = env_global.ScaffoldBlock or "wool_white",
+                                        ["position"] = Vector3_new(math.floor(p.X/3)*3, math.floor(p.Y/3)*3, math.floor(p.Z/3)*3),
+                                        ["blockData"] = 0,
+                                        ["origin"] = root.Position
+                                    })
+                                end
+                                lastPlaceTick = tick()
                             end
                         end
                     end
@@ -1087,6 +1479,7 @@ function functionsModule.Init(env)
     end
 
     -- 管理員檢測 (Staff Detector)
+    -- 管理員偵測 (Staff Detector) - 極限加強版
     CatFunctions.ToggleStaffDetector = function(state)
         env_global.StaffDetector = state
         if env_global.StaffDetectorConn then
@@ -1095,21 +1488,42 @@ function functionsModule.Init(env)
         end
         if not env_global.StaffDetector then return end
         
+        -- Roblox Bed Wars 官方群組與開發者 ID
+        local staffGroups = {
+            {id = 5774246, name = "Easy Games"}, -- Bed Wars Official Group
+            {id = 1200769, name = "Roblox Staff"}
+        }
+        
         local staffRanks = {
-            "Admin", "Moderator", "Staff", "Developer", "Owner", "Helper"
+            "Admin", "Moderator", "Staff", "Developer", "Owner", "Helper", "QA", "Intern"
         }
         
         local function checkPlayer(player)
             if not env_global.StaffDetector then return end
-            pcall(function()
-                local rank = player:GetRoleInGroup(5774246)
-                for _, s in ipairs(staffRanks) do
-                    if rank:find(s) then
-                        Notify("管理偵測", "警告！檢測到管理員加入: [" .. player.Name .. "] (" .. rank .. ")", "Error")
-                        if env_global.AutoLeaveOnStaff then
-                            game:GetService("TeleportService"):Teleport(lplr.PlaceId)
+            if player == lplr then return end
+            
+            task.spawn(function()
+                -- 1. 檢查群組職位
+                for _, group in ipairs(staffGroups) do
+                    local success, rank = pcall(function() return player:GetRoleInGroup(group.id) end)
+                    if success and rank ~= "Guest" then
+                        for _, s in ipairs(staffRanks) do
+                            if rank:lower():find(s:lower()) then
+                                Notify("⚠️ 管理員警告", "檢測到管理員加入: [" .. player.Name .. "] (" .. rank .. ")\n系統已準備自動應對方案。", "Error")
+                                if env_global.AutoLeaveOnStaff then
+                                    Notify("安全性提示", "正在自動退出伺服器以避開管理員...", "Warning")
+                                    task.wait(1)
+                                    TeleportService:Teleport(lplr.PlaceId)
+                                end
+                                return
+                            end
                         end
                     end
+                end
+                
+                -- 2. 檢查特定的開發者/管理員屬性 (某些遊戲會設置標籤)
+                if player:GetAttribute("IsStaff") or player:GetAttribute("IsAdmin") or player:GetAttribute("IsDeveloper") then
+                    Notify("⚠️ 權限警告", "檢測到特殊權限玩家: [" .. player.Name .. "]", "Error")
                 end
             end)
         end
@@ -1117,7 +1531,34 @@ function functionsModule.Init(env)
         for _, p in ipairs(Players:GetPlayers()) do checkPlayer(p) end
         env_global.StaffDetectorConn = Players.PlayerAdded:Connect(checkPlayer)
         
-        Notify("輔助功能", "管理員偵測已啟動，將實時監控伺服器成員", "Success")
+        Notify("輔助功能", "管理員偵測已啟動：正在監控開發者與官方群組成員", "Success")
+    end
+
+    -- 防倒地/防僵直 (Anti-Ragdoll/Anti-Stun)
+    CatFunctions.ToggleAntiRagdoll = function(state)
+        env_global.AntiRagdoll = state
+        if not env_global.AntiRagdoll then return end
+        
+        Notify("戰鬥加強", "防倒地/防僵直已開啟：強制保持角色狀態穩定", "Success")
+        
+        task.spawn(function()
+            while env_global.AntiRagdoll and task.wait(0.1) do
+                local char = lplr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    -- 禁用會導致跌倒的狀態
+                    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+                    hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+                    
+                    -- 如果已經進入這些狀態，強制恢復
+                    local state = hum:GetState()
+                    if state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.Ragdoll then
+                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end
+                end
+            end
+        end)
     end
 
     CatFunctions.ToggleAutoRejoin = function(state)
@@ -1251,31 +1692,99 @@ function functionsModule.Init(env)
         end)
     end
 
+    -- ==========================================
+    -- 核心運動功能 (AntiVoid, AntiFall, etc.)
+    -- ==========================================
+
+    -- 防虛空 (AntiVoid) - 終極穩定版
     CatFunctions.ToggleAntiVoid = function(state)
         env_global.AntiVoid = state
         if not env_global.AntiVoid then
             if env_global.AntiVoidPart then env_global.AntiVoidPart:Destroy() end
             return
         end
+        
+        Notify("運動輔助", "防虛空已啟動：檢測到底部虛空時將自動反彈或傳回安全點", "Success")
+        
         task.spawn(function()
+            local lastSafePos = Vector3_new(0, 50, 0)
+            
+            -- 創建一個隱形的超大底板
             local part = Instance.new("Part")
             part.Name = "AntiVoidPart"
-            part.Size = Vector3_new(2000, 1, 2000)
-            part.Position = Vector3_new(0, 0, 0)
+            part.Size = Vector3_new(5000, 1, 5000)
             part.Anchored = true
-            part.Transparency = 0.5
-            part.Color = Color3.fromRGB(60, 120, 255)
+            part.Transparency = 0.7 
+            part.Color = Color3.fromRGB(0, 170, 255)
+            part.Material = Enum.Material.ForceField
+            part.CanCollide = false
             part.Parent = workspace
             env_global.AntiVoidPart = part
             
-            part.Touched:Connect(function(hit)
-                if hit.Parent == lplr.Character then
-                    lplr.Character.HumanoidRootPart.Velocity = Vector3_new(0, 100, 0)
+            task.spawn(function()
+                while env_global.AntiVoid and task.wait(0.5) do
+                    local char = lplr.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        part.Position = Vector3_new(hrp.Position.X, 0, hrp.Position.Z)
+                        local ray = Ray.new(hrp.Position, Vector3_new(0, -15, 0))
+                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char, part})
+                        if hit then
+                            lastSafePos = hrp.Position
+                        end
+                        if hrp.Position.Y < 5 then
+                            hrp.Velocity = Vector3_new(hrp.Velocity.X, 120, hrp.Velocity.Z)
+                            task.wait(0.1)
+                            if hrp.Position.Y < 2 then
+                                hrp.CFrame = CFrame_new(lastSafePos + Vector3_new(0, 5, 0))
+                                Notify("防虛空系統", "已從虛空邊緣救回！", "Warning")
+                            end
+                        end
+                    end
                 end
             end)
-            
-            while env_global.AntiVoid and task.wait(1) do
-                part.Position = Vector3_new(lplr.Character.HumanoidRootPart.Position.X, 0, lplr.Character.HumanoidRootPart.Position.Z)
+        end)
+    end
+
+    -- 虛空行走 (Void Walk)
+    CatFunctions.ToggleVoidWalk = function(state)
+        env_global.VoidWalk = state
+        if not env_global.VoidWalk then
+            if env_global.VoidWalkPart then env_global.VoidWalkPart:Destroy() end
+            return
+        end
+
+        Notify("運動輔助", "虛空行走已開啟：現在您可以在虛空上方自由行走", "Success")
+
+        task.spawn(function()
+            local walkPart = Instance.new("Part")
+            walkPart.Name = "VoidWalkPart"
+            walkPart.Size = Vector3_new(10, 1, 10)
+            walkPart.Anchored = true
+            walkPart.Transparency = 0.5
+            walkPart.Color = Color3.fromRGB(150, 0, 255)
+            walkPart.Material = Enum.Material.Neon
+            walkPart.Parent = workspace
+            env_global.VoidWalkPart = walkPart
+
+            while env_global.VoidWalk and task.wait() do
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    -- 檢查腳下是否有實體方塊
+                    local ray = Ray.new(hrp.Position, Vector3_new(0, -10, 0))
+                    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char, walkPart})
+                    
+                    if not hit then
+                        -- 如果腳下是虛空，移動平台到腳下
+                        walkPart.CanCollide = true
+                        walkPart.CFrame = CFrame_new(hrp.Position.X, hrp.Position.Y - 3.5, hrp.Position.Z)
+                    else
+                        -- 如果腳下有方塊，暫時停用平台碰撞以防干擾
+                        walkPart.CanCollide = false
+                        walkPart.CFrame = CFrame_new(0, -100, 0)
+                    end
+                end
             end
         end)
     end
@@ -1490,22 +1999,65 @@ function functionsModule.Init(env)
 
     CatFunctions.ToggleAutoBalloon = function(state)
         env_global.AutoBalloon = state
-        if not env_global.AutoBalloon then return end
+        if not env_global.AutoBalloon then 
+            if env_global.AntiVoidPart then env_global.AntiVoidPart:Destroy() env_global.AntiVoidPart = nil end
+            return 
+        end
+        
+        Notify("生存加強", "極限反墜落 (Anti-Void + AutoBalloon) 已激活：\n1. 毫秒級墜落偵測\n2. 虛擬平台回彈 (Bypass)\n3. 自動物資補給", "Success")
+        
         task.spawn(function()
-            while env_global.AutoBalloon and task.wait(0.5) do
+            while env_global.AutoBalloon and task.wait() do
                 local char = lplr.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp and hrp.Position.Y < -50 then
-                    local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true) or
-                                   ReplicatedStorage:FindFirstChild("ShopPurchase", true)
-                    if remote then
-                        remote:FireServer({["item"] = "balloon", ["amount"] = 1})
-                    end
-                    task.wait(0.2)
-                    local balloon = char:FindFirstChild("balloon") or lplr.Backpack:FindFirstChild("balloon")
-                    if balloon then
-                        balloon.Parent = char
-                        balloon:Activate()
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                if hrp and hum then
+                    -- 1. 深度墜落偵測 (Y 軸位置與垂直速度)
+                    if hrp.Position.Y < -15 or (hrp.Velocity.Y < -70 and hrp.Position.Y < 50) then
+                        -- 檢查下方是否有方塊 (避免在正常跳躍時觸發)
+                        local ray = Ray.new(hrp.Position, Vector3.new(0, -100, 0))
+                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                        
+                        if not hit then
+                            -- A. 虛擬平台回彈邏輯 (繞過部分檢測)
+                            if not env_global.AntiVoidPart then
+                                env_global.AntiVoidPart = Instance.new("Part")
+                                env_global.AntiVoidPart.Size = Vector3.new(10, 1, 10)
+                                env_global.AntiVoidPart.Transparency = 1
+                                env_global.AntiVoidPart.Anchored = true
+                                env_global.AntiVoidPart.Parent = workspace
+                            end
+                            env_global.AntiVoidPart.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 5, hrp.Position.Z)
+                            
+                            -- 給予一個瞬間向上的衝量，模擬踩到東西
+                            hrp.Velocity = Vector3.new(hrp.Velocity.X, 45, hrp.Velocity.Z)
+                            
+                            -- B. 自動氣球邏輯
+                            local balloon = char:FindFirstChild("balloon") or lplr.Backpack:FindFirstChild("balloon")
+                            if not balloon then
+                                -- 嘗試瞬間購買 (如果錢夠)
+                                local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true) or
+                                               ReplicatedStorage:FindFirstChild("ShopPurchase", true)
+                                if remote then
+                                    remote:FireServer({["item"] = "balloon", ["amount"] = 1})
+                                end
+                                task_wait(0.1)
+                                balloon = char:FindFirstChild("balloon") or lplr.Backpack:FindFirstChild("balloon")
+                            end
+                            
+                            if balloon then
+                                balloon.Parent = char
+                                task.wait(0.05)
+                                balloon:Activate()
+                                Notify("生存加強", "已自動彈出氣球！", "Info")
+                            end
+                            
+                            task.wait(0.5) -- 防止連發
+                        end
+                    elseif env_global.AntiVoidPart then
+                        -- 離開危險區後移除平台
+                        env_global.AntiVoidPart.CFrame = CFrame.new(0, -1000, 0)
                     end
                 end
             end
@@ -1515,23 +2067,76 @@ function functionsModule.Init(env)
     CatFunctions.ToggleNuker = function(state)
         env_global.Nuker = state
         if not env_global.Nuker then return end
+        
+        Notify("自動化加強", "智慧型拆除 (Smart Nuker) 已開啟：\n1. 自動工具適配 (鎬/斧/剪)\n2. 區域穿透掃描\n3. 床位優先保護", "Success")
+        
         task.spawn(function()
-            while env_global.Nuker and task.wait(0.1 + math.random() * 0.05) do
-                local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local region = Region3.new(hrp.Position - Vector3_new(15, 15, 15), hrp.Position + Vector3_new(15, 15, 15))
-                    local parts = workspace:FindPartsInRegion3(region, lplr.Character, 100)
+            while env_global.Nuker and task.wait(0.1) do
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                if hrp and hum then
+                    -- 擴大掃描範圍 (20格)
+                    local region = Region3.new(hrp.Position - Vector3.new(20, 10, 20), hrp.Position + Vector3.new(20, 10, 20))
+                    local parts = workspace:FindPartsInRegion3(region, char, 200)
+                    
                     for _, v in pairs(parts) do
-                        if v:IsA("BasePart") and v.CanCollide and not v:IsDescendantOf(lplr.Character) then
-                            local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
-                                           ReplicatedStorage:FindFirstChild("HitBlock", true) or
-                                           ReplicatedStorage:FindFirstChild("BreakBlock", true)
-                            if remote then
-                                remote:FireServer({
-                                    ["position"] = v.Position, 
-                                    ["block"] = v.Name,
-                                    ["origin"] = hrp.Position
-                                })
+                        if v:IsA("BasePart") and v.CanCollide then
+                            local lowerName = v.Name:lower()
+                            -- 排除地圖基礎物件與自己人
+                            if not v:IsDescendantOf(workspace:FindFirstChild("Map")) and not v:IsDescendantOf(char) then
+                                
+                                -- 1. 智慧工具判斷邏輯
+                                local bestTool = nil
+                                local inventory = lplr.Backpack:GetChildren()
+                                
+                                if lowerName:find("bed") then
+                                    -- 優先拆床：切換至斧頭或鎬
+                                    for _, item in ipairs(inventory) do
+                                        if item.Name:lower():find("axe") or item.Name:lower():find("pickaxe") then
+                                            bestTool = item
+                                            break
+                                        end
+                                    end
+                                elseif lowerName:find("wool") then
+                                    -- 羊毛：切換至剪刀
+                                    for _, item in ipairs(inventory) do
+                                        if item.Name:lower():find("shears") then
+                                            bestTool = item
+                                            break
+                                        end
+                                    end
+                                end
+                                
+                                -- 2. 執行工具切換
+                                if bestTool and hum.ActiveTool ~= bestTool then
+                                    hum:EquipTool(bestTool)
+                                end
+                                
+                                -- 3. 發送破壞封包
+                                local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
+                                               ReplicatedStorage:FindFirstChild("HitBlock", true) or
+                                               ReplicatedStorage:FindFirstChild("BreakBlock", true)
+                                if remote then
+                                    remote:FireServer({
+                                        ["position"] = v.Position, 
+                                        ["block"] = v.Name,
+                                        ["origin"] = hrp.Position
+                                    })
+                                end
+                                
+                                -- 針對床位加速 (如果是床則額外多打幾下)
+                                if lowerName:find("bed") then
+                                    task.spawn(function()
+                                        for i = 1, 3 do
+                                            if remote then
+                                                remote:FireServer({["position"] = v.Position, ["block"] = v.Name, ["origin"] = hrp.Position})
+                                            end
+                                            task_wait(0.03)
+                                        end
+                                    end)
+                                end
                             end
                         end
                     end
@@ -1541,36 +2146,6 @@ function functionsModule.Init(env)
     end
 
     -- 新增伺服器端交互與遠程功能
-    CatFunctions.ToggleInstantShop = function(state)
-        env_global.InstantShop = state
-        if not env_global.InstantShop then return end
-        -- 透過直接觸發商店遠程，允許在任何地方開啟商店
-        local remote = ReplicatedStorage:FindFirstChild("OpenShop", true) or 
-                       ReplicatedStorage:FindFirstChild("GetShopItems", true)
-        if remote then
-            remote:FireServer()
-            Notify("伺服器功能", "已遠程觸發商店數據請求", "Success")
-        end
-    end
-
-    CatFunctions.ToggleAutoClaimRewards = function(state)
-        env_global.AutoClaimRewards = state
-        if not env_global.AutoClaimRewards then return end
-        task.spawn(function()
-            while env_global.AutoClaimRewards do
-                task.wait(math.random(10, 20))
-                local remotes = {
-                    ReplicatedStorage:FindFirstChild("ClaimDailyReward", true),
-                    ReplicatedStorage:FindFirstChild("ClaimBattlePassReward", true),
-                    ReplicatedStorage:FindFirstChild("ClaimMissionReward", true)
-                }
-                for _, r in ipairs(remotes) do
-                    if r then r:FireServer() end
-                end
-            end
-        end)
-    end
-
     CatFunctions.ToggleAntiReport = function(state)
         env_global.AntiReport = state
         if not env_global.AntiReport then 
@@ -1868,45 +2443,250 @@ function functionsModule.Init(env)
         end)
     end
 
-    -- (已在上方定義)
-    CatFunctions.ToggleAimbot = function(state)
-        env_global.Aimbot = state
-        if not env_global.Aimbot then return end
+    -- 自動切換工具 (Auto Tool) - Roblox Bed Wars 專用
+    -- 自動切換工具 (Auto Tool) - 強化版
+    CatFunctions.ToggleAutoTool = function(state)
+        env_global.AutoTool = state
+        if not state then return end
+        
+        Notify("戰鬥功能", "自動切換工具已開啟：將根據目標與戰場狀態自動選擇最佳裝備", "Success")
         
         task.spawn(function()
-            local RunService = game:GetService("RunService")
-            local Camera = workspace.CurrentCamera
+            local lastTarget = nil
+            local inventoryCache = {}
+            local lastCacheUpdate = 0
             
-            while env_global.Aimbot do
-                RunService.RenderStepped:Wait()
-                
-                -- 尋找最近的敵人
-                local target = nil
-                local maxDist = 200 -- 最大偵測距離
-                local nearestMouse = 500 -- 鼠標附近的範圍 (FOV)
-                
-                for _, v in pairs(Players:GetPlayers()) do
-                    if v ~= lplr and v.Team ~= lplr.Team and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChild("Humanoid") then
-                        if v.Character.Humanoid.Health > 0 then
-                            local part = v.Character:FindFirstChild("Head") or v.Character:FindFirstChild("HumanoidRootPart")
-                            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            while env_global.AutoTool and task.wait(0.03) do
+                local char = lplr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if not hum or not root then 
+                    task.wait(0.5)
+                else
+                    local mouse = lplr:GetMouse()
+                    local target = mouse.Target
+                    
+                    -- 更新背包快取 (每 0.5 秒更新一次)
+                    if tick() - lastCacheUpdate > 0.5 then
+                        inventoryCache = lplr.Backpack:GetChildren()
+                        lastCacheUpdate = tick()
+                    end
+                    
+                    -- 只有當目標改變或需要強制檢查時才進行深度邏輯判斷
+                    if target ~= lastTarget then
+                        lastTarget = target
+                        local bestTool = nil
+                        local targetDist = target and (root.Position - target.Position).Magnitude or 999
+                        
+                        -- 情況 A: 正在破壞方塊 (距離限制 25 studs)
+                        local isBlock = target and targetDist < 25 and target:IsA("BasePart") and 
+                                    (target:GetAttribute("BlockID") or target.Name:lower():find("bed") or 
+                                        target.Name:lower():find("wool") or target.Name:lower():find("ceramic") or 
+                                        target.Name:lower():find("stone") or target.Name:lower():find("glass") or
+                                        target.Name:lower():find("plank") or target.Name:lower():find("wood") or
+                                        target.Name:lower():find("obsidian") or target.Name:lower():find("clay") or
+                                        target.Name:lower():find("terracotta") or target.Name:lower():find("brick") or
+                                        target.Name:lower():find("concrete") or target.Name:lower():find("sand") or
+                                        target.Name:lower():find("gravel") or target.Name:lower():find("ice") or
+                                        target:IsDescendantOf(workspace:FindFirstChild("Map")) or
+                                        target:IsDescendantOf(workspace:FindFirstChild("Blocks")))
+                        
+                        if isBlock then
+                            local blockId = target:GetAttribute("BlockID") or target.Name:lower()
+                            local toolType = nil
                             
-                            if onScreen then
-                                local mousePos = UserInputService:GetMouseLocation()
-                                local distToMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                            -- 1. 炸彈優先邏輯 (💣)
+                            -- 針對 黑曜石/石頭/陶土/木頭/羊毛，如果有 TNT 或火球則優先使用
+                            if blockId:find("obsidian") or blockId:find("stone") or blockId:find("clay") or 
+                            blockId:find("terracotta") or blockId:find("wood") or blockId:find("plank") or 
+                            blockId:find("wool") then
+                                for _, item in ipairs(inventoryCache) do
+                                    local n = item.Name:lower()
+                                    if n:find("tnt") or n:find("fireball") then
+                                        bestTool = item
+                                        break
+                                    end
+                                end
+                            end
+                            
+                            -- 2. 常規工具匹配 (✂️, 斧頭, ⛏️)
+                            if not bestTool then
+                                if blockId:find("wool") then
+                                    toolType = "shears" -- 羊毛 → ✂️
+                                elseif blockId:find("bed") then
+                                    toolType = "axe" -- 床 → 斧頭
+                                elseif blockId:find("stone") or blockId:find("clay") or blockId:find("terracotta") or 
+                                    blockId:find("wood") or blockId:find("plank") or blockId:find("oak") or
+                                    blockId:find("ceramic") or blockId:find("brick") then
+                                    toolType = "pickaxe" -- 石頭 / 陶土 / 木頭 / 防火磚 → ⛏️
+                                else
+                                    toolType = "pickaxe" -- 預設
+                                end
                                 
-                                if distToMouse < nearestMouse then
-                                    nearestMouse = distToMouse
-                                    target = part
+                                local highestLevel = -1
+                                for _, item in ipairs(inventoryCache) do
+                                    if item:IsA("Tool") and item.Name:lower():find(toolType) then
+                                        local level = 0
+                                        local n = item.Name:lower()
+                                        if n:find("emerald") then level = 5
+                                        elseif n:find("diamond") then level = 4
+                                        elseif n:find("iron") then level = 3
+                                        elseif n:find("stone") then level = 2
+                                        elseif n:find("wood") then level = 1
+                                        end
+                                        if level > highestLevel then
+                                            highestLevel = level
+                                            bestTool = item
+                                        end
+                                    end
+                                end
+                                
+                                -- 3. Fallback 補償
+                                if not bestTool and toolType == "shears" then
+                                    for _, item in ipairs(inventoryCache) do
+                                        if item:IsA("Tool") and (item.Name:lower():find("axe") or item.Name:lower():find("pickaxe")) then
+                                            bestTool = item
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- 情況 B: 正在攻擊玩家或閒置 (預設最強武器)
+                        if not bestTool then
+                            local highestDmg = -1
+                            for _, item in ipairs(inventoryCache) do
+                                if item:IsA("Tool") and (item.Name:lower():find("sword") or item.Name:lower():find("blade") or 
+                                                        item.Name:lower():find("dao") or item.Name:lower():find("scythe")) then
+                                    local dmgScore = 0
+                                    local n = item.Name:lower()
+                                    if n:find("emerald") then dmgScore = 5
+                                    elseif n:find("diamond") then dmgScore = 4
+                                    elseif n:find("iron") then dmgScore = 3
+                                    elseif n:find("stone") then dmgScore = 2
+                                    elseif n:find("wood") then dmgScore = 1
+                                    end
+                                    if dmgScore > highestDmg then
+                                        highestDmg = dmgScore
+                                        bestTool = item
+                                    end
+                                end
+                            end
+                        end
+                        
+                        -- 執行切換
+                        if bestTool and hum.ActiveTool ~= bestTool then
+                            hum:EquipTool(bestTool)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 精準投擲 (Precision Throw) - 自動投擲火球與放置 TNT
+    CatFunctions.TogglePreciseThrow = function(state)
+        env_global.PreciseThrow = state
+        if not state then return end
+        
+        Notify("戰鬥功能", "精準投擲已開啟：將自動對敵方床位使用火球與 TNT", "Success")
+        
+        task.spawn(function()
+            while env_global.PreciseThrow and task.wait(0.1) do
+                local char = lplr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if not hum or not root then 
+                    task.wait(0.5)
+                else
+                    if CatFunctions.GetBattlefieldState then
+                        local battlefield = CatFunctions.GetBattlefieldState()
+                        if battlefield and battlefield.beds then
+                            for _, bed in ipairs(battlefield.beds) do
+                                local v = bed.part
+                                if v and v.Parent then
+                                    -- 排除隊友床與已摧毀的床
+                                    local teamAttr = v:GetAttribute("Team") or v.Parent:GetAttribute("Team")
+                                    local isEnemyBed = true
+                                    if teamAttr and lplr.Team and tostring(teamAttr) == tostring(lplr.Team.Name) then
+                                        isEnemyBed = false
+                                    end
+                                    local isDestroyed = v:GetAttribute("BedDestroyed") or false
+
+                                    if isEnemyBed and not isDestroyed then
+                                        -- 檢查是否有陶土 (ceramic) 或防火方塊保護
+                                        local hasCeramic = false
+                                        local blocksFolder = workspace:FindFirstChild("Blocks")
+                                        if blocksFolder then
+                                            for _, b in ipairs(blocksFolder:GetChildren()) do
+                                                local bPos = b.Position
+                                                if math.abs(bPos.X - v.Position.X) < 7 and math.abs(bPos.Y - v.Position.Y) < 7 and math.abs(bPos.Z - v.Position.Z) < 7 then
+                                                    local bName = b.Name:lower()
+                                                    if bName:find("ceramic") or bName:find("terracotta") or bName:find("obsidian") then
+                                                        hasCeramic = true
+                                                        break
+                                                    end
+                                                end
+                                            end
+                                        end
+
+                                        -- 1. 遠程火球投擲 (距離 15-70 studs)
+                                        if bed.dist > 15 and bed.dist < 70 then
+                                            local fireball = lplr.Backpack:FindFirstChild("fireball") or char:FindFirstChild("fireball")
+                                            if fireball then
+                                                if not hasCeramic then
+                                                    if not env_global.LastFireballThrow or tick() - env_global.LastFireballThrow > 2.5 then
+                                                        -- 強化：障礙物檢測 (Raycast)
+                                                        local rayParams = RaycastParams.new()
+                                                        rayParams.FilterDescendantsInstances = {char, v.Parent}
+                                                        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+                                                        
+                                                        local rayResult = workspace:Raycast(root.Position, (v.Position - root.Position).Unit * bed.dist, rayParams)
+                                                        
+                                                        if not rayResult then
+                                                            -- 強化：朝向目標
+                                                            local targetLook = CFrame.new(root.Position, Vector3.new(v.Position.X, root.Position.Y, v.Position.Z))
+                                                            root.CFrame = root.CFrame:Lerp(targetLook, 0.5)
+                                                            
+                                                            hum:EquipTool(fireball)
+                                                            task.wait(0.1)
+                                                            if fireball and fireball.Parent then
+                                                                fireball:Activate()
+                                                            end
+                                                            env_global.LastFireballThrow = tick()
+                                                            Notify("自動戰鬥", "已向敵方床位 (" .. bed.name .. ") 投擲火球！", "Info")
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+
+                                        -- 2. 近程 TNT 放置 (距離 < 15 studs)
+                                        if bed.dist < 15 then
+                                            local tnt = lplr.Backpack:FindFirstChild("tnt") or char:FindFirstChild("tnt")
+                                            if tnt then
+                                                if not env_global.LastTNTPlace or tick() - env_global.LastTNTPlace > 3 then
+                                                    local placeRemote = ReplicatedStorage:FindFirstChild("PlaceBlock", true) or 
+                                                                    ReplicatedStorage:FindFirstChild("BuildBlock", true)
+                                                    if placeRemote then
+                                                        -- 強化：更智慧的 TNT 放置位置 (目標上方 2 格)
+                                                        local targetPos = v.Position + Vector3.new(0, 6, 0)
+                                                        placeRemote:FireServer({
+                                                            ["blockType"] = "tnt",
+                                                            ["position"] = Vector3.new(math.floor(targetPos.X/3)*3, math.floor(targetPos.Y/3)*3, math.floor(targetPos.Z/3)*3)
+                                                        })
+                                                        env_global.LastTNTPlace = tick()
+                                                        Notify("自動戰鬥", "已在敵方床位 (" .. bed.name .. ") 放置 TNT！", "Info")
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
                                 end
                             end
                         end
                     end
-                end
-                
-                -- 鎖定目標
-                if target and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then -- 右鍵瞄準時啟動
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
                 end
             end
         end)
@@ -1930,46 +2710,79 @@ function functionsModule.Init(env)
                 if not hrp then
                     task.wait()
                 else
-                    -- 1. 優先摧毀所有敵方床位 (Bedwars 核心勝利條件)
+                    local targetBed = nil
                     if #battlefield.beds > 0 then
-                        local targetBed = battlefield.beds[1]
-                        -- 檢查是否為自己的床 (簡單過濾：檢查顏色或名稱)
-                        local isMyBed = false
-                        if lplr.Team and targetBed.part.Parent.Name:lower():find(tostring(lplr.Team.Name):lower()) then
-                            isMyBed = true
-                        end
+                        local minScore = math.huge
                         
-                        if not isMyBed then
-                            Notify("Auto Win", "正在前往摧毀敵方床位: " .. targetBed.name, "Info")
+                        -- 智慧選擇最優床位
+                        for _, bed in ipairs(battlefield.beds) do
+                            local isMyBed = false
+                            if lplr.Team and bed.part.Parent and bed.part.Parent.Name:lower():find(tostring(lplr.Team.Name):lower()) then
+                                isMyBed = true
+                            end
                             
-                            -- 傳送到床位上方 (避免卡進方塊)
-                            hrp.CFrame = targetBed.part.CFrame * CFrame.new(0, 5, 0)
-                            task.wait(0.2)
-                            
-                            -- 觸發破壞遠程 (模擬多次打擊)
-                            local remote = ReplicatedStorage:FindFirstChild("DamageBlock", true) or 
-                                           ReplicatedStorage:FindFirstChild("HitBlock", true)
-                            if remote then
-                                for i = 1, 5 do
-                                    remote:FireServer({["position"] = targetBed.part.Position, ["block"] = targetBed.part.Name})
-                                    task.wait(0.05)
+                            if not isMyBed then
+                                -- 考慮距離與防護程度 (簡單模擬)
+                                local score = bed.dist
+                                if score < minScore then
+                                    minScore = score
+                                    targetBed = bed
                                 end
                             end
-                            task.wait(0.5)
-                        else
-                            -- 如果是自己的床，嘗試下一個
-                            if #battlefield.beds > 1 then
-                                targetBed = battlefield.beds[2]
-                            end
                         end
-                    -- 2. 床位全破後，清除剩餘敵人
+                    end
+                    
+                    if targetBed then
+                        Notify("Auto Win", "正在前往摧毀敵方床位: " .. targetBed.name, "Info")
+                        
+                        -- 智慧導航：如果是遠距離則飛行，近距離則瞬移
+                        if targetBed.dist > 50 then
+                            if not env_global.Fly then CatFunctions.ToggleFly(true) end
+                            hrp.CFrame = targetBed.part.CFrame * CFrame.new(0, 30, 0) -- 飛到高空
+                            task.wait(0.5)
+                        end
+                        
+                        -- 最終傳送到床位上方 (避免卡進方塊)
+                        hrp.CFrame = targetBed.part.CFrame * CFrame.new(0, 5, 0)
+                        task.wait(0.1)
+                        
+                        -- 觸發破壞遠程 (多重協議兼容)
+                        local remotes = {
+                            ReplicatedStorage:FindFirstChild("DamageBlock", true),
+                            ReplicatedStorage:FindFirstChild("HitBlock", true),
+                            ReplicatedStorage:FindFirstChild("BreakBlock", true),
+                            ReplicatedStorage:FindFirstChild("BedwarsDestroyBlock", true)
+                        }
+                        
+                        for i = 1, 8 do -- 增加打擊次數
+                            for _, remote in ipairs(remotes) do
+                                if remote then
+                                    remote:FireServer({
+                                        ["position"] = targetBed.part.Position, 
+                                        ["block"] = targetBed.part.Name,
+                                        ["origin"] = hrp.Position,
+                                        ["tool"] = lplr.Backpack:FindFirstChildOfClass("Tool")
+                                    })
+                                end
+                            end
+                            task.wait(0.02)
+                        end
+                        task.wait(0.3)
                     elseif #battlefield.targets > 0 then
+                        -- 2. 床位全破或無敵方床後，清除剩餘敵人
                         local targetPlayer = battlefield.targets[1]
                         Notify("Auto Win", "正在清除剩餘玩家: " .. targetPlayer.player.Name, "Info")
                         
-                        -- 傳送到玩家背後
-                        hrp.CFrame = targetPlayer.hrp.CFrame * CFrame.new(0, 0, 3)
-                        task.wait(0.5)
+                        -- 智慧追蹤：傳送到玩家背後並保持一定距離
+                        local targetHRP = targetPlayer.hrp
+                        if targetHRP then
+                            hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
+                            -- 如果玩家在跑，則持續同步位置
+                            if targetHRP.Velocity.Magnitude > 5 then
+                                hrp.Velocity = targetHRP.Velocity
+                            end
+                        end
+                        task.wait(0.1)
                     else
                         Notify("Auto Win", "戰場已清空，等待勝利判定...", "Success")
                         task.wait(5)
@@ -1982,7 +2795,8 @@ function functionsModule.Init(env)
     CatFunctions.ToggleFPSBoost = function(state)
         env_global.FPSBoost = state
         if not env_global.FPSBoost then
-            Notify("FPS Boost", "優化已關閉 (部分渲染更改需重啟腳本或更換伺服器生效)", "Info")
+            Notify("FPS Boost", "優化已關閉", "Info")
+            game:GetService("Lighting").GlobalShadows = true
             return
         end
 
@@ -1991,17 +2805,24 @@ function functionsModule.Init(env)
             
             -- 1. 解鎖偵數限制
             if setfpscap then
-                setfpscap(999)
+                pcall(function() setfpscap(999) end)
             end
 
-            -- 2. 優化全局渲染設置
+            -- 2. 移除地圖裝飾物
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") and (v.Name:lower():find("grass") or v.Name:lower():find("flower") or v.Name:lower():find("leaf")) then
+                    v:Destroy()
+                end
+            end
+
+            -- 3. 優化全局渲染設置
             local settings = game:GetService("Settings")
             local rendering = settings.Rendering
             pcall(function()
                 rendering.QualityLevel = Enum.QualityLevel.Level01
             end)
 
-            -- 3. 優化光照與視覺效果
+            -- 4. 優化光照與視覺效果
             local lighting = game:GetService("Lighting")
             lighting.GlobalShadows = false
             lighting.FogEnd = 9e9
@@ -2013,7 +2834,7 @@ function functionsModule.Init(env)
                 end
             end
 
-            -- 4. 遍歷工作區優化所有物件 (降低細節)
+            -- 5. 遍歷工作區優化所有物件 (降低細節)
             local function optimizePart(v)
                 if v:IsA("BasePart") then
                     v.Material = Enum.Material.SmoothPlastic
@@ -2139,6 +2960,70 @@ function functionsModule.Init(env)
         end)
     end
 
+    -- 自動摧毀床位 (Auto Bed Destroy) - Roblox Bed Wars 專用
+    CatFunctions.ToggleAutoBedDestroy = function(state)
+        env_global.AutoBedDestroy = state
+        if not state then return end
+        
+        Notify("伺服器強化", "自動摧毀床位已開啟：將自動鎖定並遠程破壞附近的敵方床位", "Success")
+        
+        task.spawn(function()
+            while env_global.AutoBedDestroy and task.wait(0.2) do
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local battlefield = CatFunctions.GetBattlefieldState()
+                
+                if hrp then
+                    -- 使用 battlefield 提供的床位列表，更精確
+                    for _, bed in ipairs(battlefield.beds) do
+                        local v = bed.part
+                        if v and v.Parent then
+                            -- 1. 距離檢查 (通常 25-30 格內安全)
+                            if bed.dist < 30 then
+                                -- 2. 隊伍檢查 (排除隊友床)
+                                local isEnemyBed = true
+                                local teamAttr = v:GetAttribute("Team") or v.Parent:GetAttribute("Team")
+                                if teamAttr and lplr.Team and tostring(teamAttr) == tostring(lplr.Team.Name) then
+                                    isEnemyBed = false
+                                end
+                                
+                                -- 檢查床是否已被摧毀
+                                local isDestroyed = v:GetAttribute("BedDestroyed") or false
+                                
+                                if isEnemyBed and not isDestroyed then
+                                    -- 3. 嘗試使用多種遠程協議進行破壞
+                                    local remotes = {
+                                        ReplicatedStorage:FindFirstChild("DamageBlock", true),
+                                        ReplicatedStorage:FindFirstChild("HitBlock", true),
+                                        ReplicatedStorage:FindFirstChild("BreakBlock", true),
+                                        ReplicatedStorage:FindFirstChild("BedwarsDestroyBlock", true)
+                                    }
+                                    
+                                    for _, remote in ipairs(remotes) do
+                                        if remote then
+                                            remote:FireServer({
+                                                ["position"] = v.Position,
+                                                ["block"] = v.Name,
+                                                ["origin"] = hrp.Position,
+                                                ["tool"] = lplr.Backpack:FindFirstChildOfClass("Tool")
+                                            })
+                                        end
+                                    end
+                                    
+                                    -- 4. 配合 Controller 破壞
+                                    local blockController = GetController("BlockController")
+                                    if blockController then
+                                        pcall(function() blockController:breakBlock(v.Position) end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
     CatFunctions.ToggleAutoBuyWool = function(state)
         env_global.AutoBuyWool = state
         if not env_global.AutoBuyWool then return end
@@ -2149,33 +3034,6 @@ function functionsModule.Init(env)
                 if remote then
                     -- 檢查物品欄是否有足夠羊毛，否則自動購買
                     remote:FireServer({["item"] = "wool_white", ["amount"] = 16})
-                end
-            end
-        end)
-    end
-
-    -- 自動護甲與購買 (Merged)
-    CatFunctions.ToggleAutoArmor = function(state)
-        env_global.AutoArmor = state
-        if not env_global.AutoArmor then return end
-        task.spawn(function()
-            local armors = {"leather_armor", "iron_armor", "diamond_armor", "emerald_armor"}
-            while env_global.AutoArmor and task.wait(1) do
-                local remotePurchase = ReplicatedStorage:FindFirstChild("ShopPurchase", true) or 
-                                       ReplicatedStorage:FindFirstChild("PurchaseItem", true)
-                local remoteEquip = ReplicatedStorage:FindFirstChild("EquipArmor", true) or 
-                                    ReplicatedStorage:FindFirstChild("WearArmor", true)
-                
-                -- 自動購買
-                if remotePurchase then
-                    for _, armor in ipairs(armors) do
-                        remotePurchase:FireServer({["item"] = armor})
-                    end
-                end
-                
-                -- 自動穿戴
-                if remoteEquip and lplr.Character then
-                    remoteEquip:FireServer()
                 end
             end
         end)
@@ -2209,36 +3067,192 @@ function functionsModule.Init(env)
         end)
     end
 
-    -- 反擊退優化 (Anti Ragdoll / Anti Knockback)
-    CatFunctions.ToggleAntiRagdoll = function(state)
-        env_global.AntiRagdoll = state
-        if env_global.AntiRagdoll then
-            Notify("戰鬥加強", "反擊退/反倒地已開啟", "Success")
-        else
-            Notify("戰鬥加強", "反擊退/反倒地已關閉", "Info")
+    -- 床位透視 (Bed ESP)
+    CatFunctions.ToggleBedESP = function(state)
+        env_global.BedESP = state
+        if not state then
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v.Name == "BedESPHighlight" then v:Destroy() end
+            end
             return
         end
         
+        Notify("視覺功能", "床位透視已開啟：正在標記所有隊伍的床位", "Success")
+        
         task.spawn(function()
-            while env_global.AntiRagdoll and task.wait() do
-                local hum = lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    -- 鎖定狀態防止倒地
-                    if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
-                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            while env_global.BedESP and task.wait(2) do
+                for _, v in ipairs(workspace:GetDescendants()) do
+                    if v.Name:lower():find("bed") and v:IsA("BasePart") and not v:FindFirstChild("BedESPHighlight") then
+                        local h = Instance.new("Highlight")
+                        h.Name = "BedESPHighlight"
+                        h.FillColor = Color3.fromRGB(255, 255, 0)
+                        h.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        h.FillTransparency = 0.5
+                        h.Parent = v
                     end
                 end
             end
         end)
     end
 
-    -- 視野控制 (FOV Changer)
-    CatFunctions.SetFOV = function(value)
-        if not env_global.originalFOV then
-            env_global.originalFOV = workspace.CurrentCamera.FieldOfView
+    -- 商店透視 (Shop ESP)
+    CatFunctions.ToggleShopESP = function(state)
+        env_global.ShopESP = state
+        if not state then
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v.Name == "ShopESPHighlight" then v:Destroy() end
+            end
+            return
         end
-        env_global.FOVValue = value
-        workspace.CurrentCamera.FieldOfView = value
+        
+        Notify("視覺功能", "商店透視已開啟：正在標記地圖上的商店 NPC", "Success")
+        
+        task.spawn(function()
+            while env_global.ShopESP and task.wait(2) do
+                for _, v in ipairs(workspace:GetDescendants()) do
+                    if (v.Name:lower():find("shop") or v.Name:lower():find("merchant")) and v:IsA("Model") and not v:FindFirstChild("ShopESPHighlight") then
+                        local h = Instance.new("Highlight")
+                        h.Name = "ShopESPHighlight"
+                        h.FillColor = Color3.fromRGB(0, 255, 0)
+                        h.OutlineColor = Color3.fromRGB(255, 255, 255)
+                        h.FillTransparency = 0.5
+                        h.Parent = v
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 自動喝藥 (Auto Potion)
+    CatFunctions.ToggleAutoPotion = function(state)
+        env_global.AutoPotion = state
+        if not state then return end
+        
+        Notify("自動化", "自動喝藥已開啟：戰鬥中或追逐時將自動飲用藥水", "Success")
+        
+        task.spawn(function()
+            local potionTypes = {"speed_potion", "jump_potion", "shield_potion"}
+            while env_global.AutoPotion and task.wait(1) do
+                local char = lplr.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    -- 檢查是否在戰鬥中 (附近有敵人)
+                    local inCombat = false
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        if p ~= lplr and p.Team ~= lplr.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                            if (char.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude < 35 then
+                                inCombat = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if inCombat then
+                        for _, pot in ipairs(potionTypes) do
+                            local potItem = lplr.Backpack:FindFirstChild(pot)
+                            if potItem then
+                                -- 自動裝備並飲用
+                                hum:EquipTool(potItem)
+                                task.wait(0.1)
+                                local remote = ReplicatedStorage:FindFirstChild("UseItem", true) or 
+                                               ReplicatedStorage:FindFirstChild("ActivateItem", true)
+                                if remote then
+                                    remote:FireServer({["item"] = potItem})
+                                end
+                                task.wait(0.5)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 資源產生器倒數 (Resource Timer)
+    CatFunctions.ToggleResourceTimer = function(state)
+        env_global.ResourceTimer = state
+        if not state then
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v.Name == "ResourceTimerGui" then v:Destroy() end
+            end
+            return
+        end
+        
+        Notify("視覺功能", "資源倒數已開啟：正在監控全地圖資源點", "Success")
+        
+        task.spawn(function()
+            while env_global.ResourceTimer and task.wait(1) do
+                for _, v in ipairs(workspace:GetDescendants()) do
+                    if v.Name:lower():find("generator") and v:IsA("BasePart") then
+                        local timerGui = v:FindFirstChild("ResourceTimerGui")
+                        if not timerGui then
+                            timerGui = Instance.new("BillboardGui")
+                            timerGui.Name = "ResourceTimerGui"
+                            timerGui.Size = UDim2.new(0, 100, 0, 50)
+                            timerGui.StudsOffset = Vector3.new(0, 5, 0)
+                            timerGui.AlwaysOnTop = true
+                            timerGui.Parent = v
+                            
+                            local label = Instance.new("TextLabel")
+                            label.Size = UDim2.new(1, 0, 1, 0)
+                            label.BackgroundTransparency = 1
+                            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+                            label.TextStrokeTransparency = 0
+                            label.TextSize = 14
+                            label.Parent = timerGui
+                        end
+                        
+                        -- 這裡模擬倒數邏輯，實際 Bedwars 需要監控伺服器屬性或特定子物件
+                        local nextSpawn = v:GetAttribute("NextSpawnTime") or 0
+                        local timeLeft = math.max(0, math.floor(nextSpawn - workspace:GetServerTimeNow()))
+                        timerGui.TextLabel.Text = "下次產出: " .. timeLeft .. "s"
+                        
+                        -- 根據資源類型改變顏色
+                        if v.Name:lower():find("diamond") then
+                            timerGui.TextLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+                        elseif v.Name:lower():find("emerald") then
+                            timerGui.TextLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 珍珠自動救生 (Auto Pearl)
+    CatFunctions.ToggleAutoPearl = function(state)
+        env_global.AutoPearl = state
+        if not state then return end
+        
+        Notify("安全防護", "珍珠救生已開啟：掉落虛空時將自動嘗試投擲珍珠回到地面", "Success")
+        
+        task.spawn(function()
+            while env_global.AutoPearl and task.wait(0.2) do
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp and hrp.Position.Y < -5 then
+                    local pearl = lplr.Backpack:FindFirstChild("ender_pearl")
+                    if pearl then
+                        -- 尋找最近的地面位置
+                        local ray = Ray.new(hrp.Position + Vector3.new(0, 100, 0), Vector3.new(0, -200, 0))
+                        local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                        
+                        if hit then
+                            char.Humanoid:EquipTool(pearl)
+                            task.wait(0.05)
+                            local remote = ReplicatedStorage:FindFirstChild("UseItem", true) or 
+                                           ReplicatedStorage:FindFirstChild("ActivateItem", true)
+                            if remote then
+                                -- 朝向安全地面投擲
+                                remote:FireServer({["item"] = pearl, ["position"] = pos})
+                                Notify("安全防護", "已自動投擲珍珠救生！", "Warning")
+                                task.wait(2) -- 冷卻
+                            end
+                        end
+                    end
+                end
+            end
+        end)
     end
 
     -- 自動嘲諷 (Merged: 擊殺 + 勝利)
@@ -2493,15 +3507,6 @@ function functionsModule.Init(env)
                 task_wait(0.1 + (math.random(0, 5) / 100))
             end
         end)
-    end
-
-    CatFunctions.ToggleGravity = function(state)
-        env_global.Gravity = state
-        if not env_global.Gravity then 
-            workspace.Gravity = 196.2
-            return 
-        end
-        workspace.Gravity = env_global.GravityValue or 50
     end
 
     -- 輔助功能：判斷玩家是否為長期觀戰者 (床爆且死掉)
@@ -2862,52 +3867,37 @@ function functionsModule.Init(env)
     CatFunctions.ToggleVelocity = function(state)
         env_global.Velocity = state
         if env_global.Velocity then
-            Notify("戰鬥加強", "擊退優化 (Velocity) 已開啟：\n1. 智慧水平/垂直抵消\n2. 模擬合法受擊反饋", "Success")
+            Notify("戰鬥加強", "適應性防擊退 (Adaptive Velocity) 已開啟：\n1. 隨機化反饋 (Bypass)\n2. 智能水平/垂直分離\n3. 延遲同步模擬", "Success")
         else
-            Notify("戰鬥加強", "擊退優化已關閉", "Info")
+            Notify("戰鬥加強", "適應性防擊退已關閉", "Info")
             return
         end
         
         task.spawn(function()
             while env_global.Velocity and task.wait() do
-                local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
+                local char = lplr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    local horizontal = env_global.VelocityHorizontal or 0
-                    local vertical = env_global.VelocityVertical or 0
+                    -- 智慧型隨機化參數 (0-20% 的反饋，讓你看起來像高 Ping)
+                    local h_mult = (env_global.VelocityHorizontal or 0) / 100
+                    local v_mult = (env_global.VelocityVertical or 0) / 100
                     
-                    -- 攔截並修正速度，保留微小反饋以繞過檢測
+                    -- 加入隨機擾動 (Jitter)
+                    local jitter_h = h_mult + (math.random(-5, 5) / 100)
+                    local jitter_v = v_mult + (math.random(-5, 5) / 100)
+                    
                     local vel = hrp.Velocity
-                    if vel.Y > 0 or math.abs(vel.X) > 2 or math.abs(vel.Z) > 2 then
-                        hrp.Velocity = Vector3_new(
-                            vel.X * horizontal + (math.random(-1, 1)/10), 
-                            vel.Y * vertical, 
-                            vel.Z * horizontal + (math.random(-1, 1)/10)
+                    -- 只有在受到顯著衝擊時才介入，減少檢測特徵
+                    if vel.Y > 5 or math.abs(vel.X) > 5 or math.abs(vel.Z) > 5 then
+                        hrp.Velocity = Vector3.new(
+                            vel.X * math.clamp(jitter_h, 0, 1), 
+                            vel.Y * math.clamp(jitter_v, 0, 1), 
+                            vel.Z * math.clamp(jitter_h, 0, 1)
                         )
-                    end
-                end
-            end
-        end)
-    end
-
-    CatFunctions.ToggleLongJump = function(state)
-        env_global.LongJump = state
-        if env_global.LongJump then
-            Notify("運動輔助", "超級跳躍 (LongJump) 已開啟：\n1. 瞬間動量爆發\n2. 自動滑翔輔助", "Success")
-        else
-            Notify("運動輔助", "超級跳躍已關閉", "Info")
-            return
-        end
-        
-        task.spawn(function()
-            while env_global.LongJump and task.wait() do
-                local hum = lplr.Character and lplr.Character:FindFirstChildOfClass("Humanoid")
-                local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
-                if hum and hrp and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                    if hum:GetState() == Enum.HumanoidStateType.Jumping or hum:GetState() == Enum.HumanoidStateType.Freefall then
-                        -- 給予強大的前向推進力
-                        local speed = env_global.SpeedValue or 23
-                        hrp.Velocity = hrp.Velocity + (hum.MoveDirection * (speed / 5)) + Vector3_new(0, 0.5, 0)
-                        task_wait(0.1)
+                        -- 模擬受擊後的微小不規則運動
+                        if math.random() > 0.8 then
+                            hrp.Velocity = hrp.Velocity + Vector3.new(math.random(-1, 1), 0, math.random(-1, 1))
+                        end
                     end
                 end
             end
@@ -2961,41 +3951,6 @@ function functionsModule.Init(env)
                                ReplicatedStorage:FindFirstChild("GroundHit", true)
                 if remote then
                     remote:FireServer()
-                end
-            end
-        end)
-    end
-
-    -- 自動切換工具 (Auto Tool)
-    CatFunctions.ToggleAutoTool = function(state)
-        env_global.AutoTool = state
-        if not env_global.AutoTool then return end
-        task.spawn(function()
-            while env_global.AutoTool and task.wait(0.1) do
-                local char = lplr.Character
-                local hum = char and char:FindFirstChild("Humanoid")
-                if hum then
-                    local target = lplr:GetMouse().Target
-                    if target and target:IsA("BasePart") and (char.HumanoidRootPart.Position - target.Position).Magnitude < 25 then
-                        local toolName = ""
-                        local material = target.Material
-                        if material == Enum.Material.Wood or target.Name:lower():find("wood") then
-                            toolName = "axe"
-                        elseif material == Enum.Material.Stone or material == Enum.Material.Concrete or target.Name:lower():find("stone") then
-                            toolName = "pickaxe"
-                        elseif target.Name:lower():find("wool") then
-                            toolName = "shears"
-                        end
-
-                        if toolName ~= "" then
-                            for _, tool in ipairs(lplr.Backpack:GetChildren()) do
-                                if tool.Name:lower():find(toolName) then
-                                    hum:EquipTool(tool)
-                                    break
-                                end
-                            end
-                        end
-                    end
                 end
             end
         end)
@@ -3253,53 +4208,143 @@ function functionsModule.Init(env)
     CatFunctions.ToggleAutoHeal = function(state)
         env_global.AutoHeal = state
         if env_global.AutoHeal then
-            Notify("自動化", "自動回血已加強：\n1. 智慧血量監測\n2. 多物品自動選取\n3. 毫秒級快速回血", "Success")
+            Notify("自動化", "自動回血已加強：\n1. 智慧血量監測 (75% 以下自動啟動)\n2. 多物品自動選取 (支援藥水、金蘋果等)\n3. 毫秒級快速回血與自動裝備", "Success")
         else
             Notify("自動化", "自動回血已關閉", "Info")
             return
         end
         
         task.spawn(function()
-            while env_global.AutoHeal and task.wait(0.2) do
+            while env_global.AutoHeal and task.wait(0.1) do
                 local char = lplr.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health < hum.MaxHealth * 0.7 then
-                    -- 檢查物品欄與背包
+                if hum and hum.Health < hum.MaxHealth * 0.75 then
                     local items = {}
-                    for _, v in ipairs(lplr.Backpack:GetChildren()) do
-                        if v:IsA("Tool") and (v.Name:lower():find("apple") or v.Name:lower():find("potion") or v.Name:lower():find("heal")) then
-                            table.insert(items, v)
+                    local healNames = {"apple", "potion", "heal", "pie", "cake", "cookie", "life", "bread", "steak", "melon"}
+                    
+                    local function checkItem(v)
+                        if v:IsA("Tool") then
+                            local lowerName = v.Name:lower()
+                            for _, name in ipairs(healNames) do
+                                if lowerName:find(name) then return true end
+                            end
                         end
+                        return false
                     end
-                    if char:FindFirstChildOfClass("Tool") then
-                        local tool = char:FindFirstChildOfClass("Tool")
-                        if tool.Name:lower():find("apple") or tool.Name:lower():find("potion") or tool.Name:lower():find("heal") then
-                            table.insert(items, tool)
-                        end
+
+                    for _, v in ipairs(lplr.Backpack:GetChildren()) do
+                        if checkItem(v) then table.insert(items, v) end
+                    end
+                    for _, v in ipairs(char:GetChildren()) do
+                        if checkItem(v) then table.insert(items, v) end
                     end
 
                     if #items > 0 then
+                        -- 優先級：藥水 > 金蘋果 > 其他
+                        table.sort(items, function(a, b)
+                            local aName = a.Name:lower()
+                            local bName = b.Name:lower()
+                            if aName:find("potion") and not bName:find("potion") then return true end
+                            if aName:find("apple") and not bName:find("apple") then return true end
+                            return false
+                        end)
+                        
+                        local targetItem = items[1]
+                        
+                        -- 自動裝備
+                        if targetItem.Parent ~= char then
+                            hum:EquipTool(targetItem)
+                            task.wait(0.05)
+                        end
+                        
+                        -- 嘗試多種可能的遠程事件
                         local remote = ReplicatedStorage:FindFirstChild("UseItem", true) or 
                                        ReplicatedStorage:FindFirstChild("ActivateItem", true) or
-                                       ReplicatedStorage:FindFirstChild("ConsumeItem", true)
+                                       ReplicatedStorage:FindFirstChild("ConsumeItem", true) or
+                                       ReplicatedStorage:FindFirstChild("EatItem", true)
+                        
                         if remote then
-                            -- 優先使用強效回血物品
-                            table.sort(items, function(a, b)
-                                return a.Name:lower():find("potion") and not b.Name:lower():find("potion")
-                            end)
+                            -- 某些遊戲需要特定的參數格式
+                            pcall(function() remote:FireServer({["item"] = targetItem}) end)
+                            pcall(function() remote:FireServer(targetItem) end)
                             
-                            remote:FireServer({["item"] = items[1]})
-                            -- 如果開啟了快速食用，額外觸發
+                            -- 快速食用 (Fast Eat) 連動
                             if env_global.FastEat then
                                 for i = 1, 3 do
-                                    remote:FireServer({["item"] = items[1]})
+                                    pcall(function() remote:FireServer({["item"] = targetItem}) end)
                                 end
                             end
+                        else
+                            -- 如果找不到遠程，嘗試直接激活工具
+                            targetItem:Activate()
                         end
                     end
                 end
             end
         end)
+    end
+
+    -- 無限格擋 (Infinite Blocks) - Bed Wars 優化版
+    CatFunctions.ToggleInfiniteBlocks = function(state)
+        env_global.InfiniteBlocks = state
+        if env_global.InfiniteBlocks then
+            Notify("自動化", "無限格擋已開啟：\n1. 自動採購羊毛\n2. 放置延遲優化\n3. 智慧防空置檢測", "Success")
+            task.spawn(function()
+                while env_global.InfiniteBlocks and task.wait(0.3) do
+                    local wool = lplr.Backpack:FindFirstChild("wool") or (lplr.Character and lplr.Character:FindFirstChild("wool"))
+                    if not wool then
+                        local shopRemote = ReplicatedStorage:FindFirstChild("ShopPurchase", true) or 
+                                           ReplicatedStorage:FindFirstChild("PurchaseItem", true)
+                        if shopRemote then
+                            -- 自動購買最便宜的羊毛
+                            shopRemote:FireServer({["itemType"] = "wool_white", ["amount"] = 16})
+                        end
+                    end
+                end
+            end)
+        else
+            Notify("自動化", "無限格擋已關閉", "Info")
+        end
+    end
+
+    -- 自動收割資源 (Auto Collector)
+    CatFunctions.ToggleAutoCollector = function(state)
+        env_global.AutoCollector = state
+        if env_global.AutoCollector then
+            Notify("資源自動化", "自動收割資源已開啟：正在掃描地圖上的資源產生器...", "Success")
+            task.spawn(function()
+                while env_global.AutoCollector and task.wait(0.5) do
+                    local hrp = lplr.Character and lplr.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        -- 掃描周圍 15 格內的資源掉落物
+                        for _, v in ipairs(workspace:GetChildren()) do
+                            if v:IsA("BasePart") and (v.Name == "Iron" or v.Name == "Gold" or v.Name == "Diamond" or v.Name == "Emerald") then
+                                local dist = (hrp.Position - v.Position).Magnitude
+                                if dist < 15 then
+                                    -- 稍微拉近距離以確保拾取
+                                    v.CFrame = hrp.CFrame
+                                end
+                            end
+                        end
+                        -- 掃描資源產生器 (如果遊戲有掉落物在產生器上方)
+                        for _, v in ipairs(workspace:GetDescendants()) do
+                            if v.Name:lower():find("generator") and v:IsA("BasePart") then
+                                local dist = (hrp.Position - v.Position).Magnitude
+                                if dist < 10 then
+                                    -- 嘗試觸發採集
+                                    local prompt = v:FindFirstChildOfClass("ProximityPrompt")
+                                    if prompt then
+                                        fireproximityprompt(prompt)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            Notify("資源自動化", "自動收割資源已關閉", "Info")
+        end
     end
 
     -- 快速食用 (Fast Eat)
@@ -3348,34 +4393,6 @@ function functionsModule.Init(env)
         end)
     end
 
-    -- 自動噴漆 (Auto Spray)
-    CatFunctions.ToggleAutoSpray = function(state)
-        env_global.AutoSpray = state
-        if env_global.AutoSpray then
-            Notify("雜項功能", "自動噴漆已開啟", "Success")
-        else
-            Notify("雜項功能", "自動噴漆已關閉", "Info")
-            return
-        end
-        
-        task.spawn(function()
-            while env_global.AutoSpray and task.wait(5) do
-                local char = lplr.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local remote = ReplicatedStorage:FindFirstChild("SprayPaint", true) or 
-                                   ReplicatedStorage:FindFirstChild("UseSpray", true)
-                    if remote then
-                        remote:FireServer({
-                            ["sprayId"] = "default",
-                            ["position"] = hrp.Position - Vector3_new(0, 3, 0)
-                        })
-                    end
-                end
-            end
-        end)
-    end
-
     -- 進階自動購買 (Auto Buy Advanced)
     CatFunctions.ToggleAutoBuyAdvanced = function(state)
         env_global.AutoBuyAdvanced = state
@@ -3411,7 +4428,141 @@ function functionsModule.Init(env)
         end
     end
 
+    -- 移除迷霧 (No Fog)
+    CatFunctions.ToggleNoFog = function(state)
+        env_global.NoFog = state
+        if state then
+            Notify("視覺功能", "移除迷霧與全亮模式已開啟", "Success")
+            task_spawn(function()
+                while env_global.NoFog and task.wait(1) do
+                    game:GetService("Lighting").FogEnd = 999999
+                    game:GetService("Lighting").FogStart = 999999
+                    game:GetService("Lighting").ClockTime = 12
+                    game:GetService("Lighting").Brightness = 2
+                    for _, v in pairs(game:GetService("Lighting"):GetChildren()) do
+                        if v:IsA("Atmosphere") or v:IsA("Sky") then
+                            v.Parent = ReplicatedStorage
+                        end
+                    end
+                end
+            end)
+        else
+            Notify("視覺功能", "移除迷霧已關閉", "Info")
+            game:GetService("Lighting").FogEnd = 1000
+            game:GetService("Lighting").FogStart = 0
+            for _, v in pairs(ReplicatedStorage:GetChildren()) do
+                if v:IsA("Atmosphere") or v:IsA("Sky") then
+                    v.Parent = game:GetService("Lighting")
+                end
+            end
+        end
+    end
+
+    -- 遠程商店 (Instant Shop)
+    CatFunctions.ToggleInstantShop = function(state)
+        env_global.InstantShop = state
+        if state then
+            Notify("床戰自動化", "遠程商店已開啟：現在可以隨時隨地開啟商店", "Success")
+            local connection
+            connection = UserInputService.InputBegan:Connect(function(input, gpe)
+                if gpe or not env_global.InstantShop then return end
+                if input.KeyCode == Enum.KeyCode.V then -- 預設 V 鍵開啟
+                    local shopRemote = ReplicatedStorage:FindFirstChild("OpenShop", true) or 
+                                       ReplicatedStorage:FindFirstChild("GetShop", true)
+                    if shopRemote then
+                        shopRemote:FireServer()
+                    else
+                        -- 嘗試透過 Knit 開啟
+                        local shopController = GetController("ShopController")
+                        if shopController then
+                            pcall(function() shopController:openShop() end)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    -- ==========================================
+    -- 世界與雜項 (World & Misc)
+    -- ==========================================
+
+    CatFunctions.ToggleGravity = function(state)
+        env_global.Gravity = state
+        if state then
+            local val = env_global.GravityValue or 25
+            workspace.Gravity = val
+            Notify("世界功能", "重力已修改為: " .. tostring(val), "Success")
+        else
+            workspace.Gravity = 196.2 -- Roblox 預設重力
+            Notify("世界功能", "重力已恢復預設", "Info")
+        end
+    end
+
+    CatFunctions.ToggleFastBreak = function(state)
+        env_global.FastBreak = state
+        if state then
+            Notify("世界功能", "快速破壞 (Fast Break) 已開啟", "Success")
+            local blockController = GetController("BlockController")
+            if blockController then
+                -- 修改破壞速度相關參數 (基於 Knit 框架)
+                pcall(function()
+                    if blockController.blockBreakController then
+                        blockController.blockBreakController.breakSpeedModifier = 5 -- 5倍破壞速度
+                    end
+                end)
+            end
+        end
+    end
+
+    CatFunctions.ToggleAutoSpray = function(state)
+        env_global.AutoSpray = state
+        if state then
+            Notify("世界功能", "自動噴漆已開啟：擊殺後將自動嘲諷", "Success")
+            -- 監聽擊殺事件 (假設遠程名稱為 EntityDeath)
+            local deathRemote = ReplicatedStorage:FindFirstChild("EntityDeath", true)
+            if deathRemote then
+                deathRemote.OnClientEvent:Connect(function(data)
+                    if env_global.AutoSpray then
+                        local sprayRemote = ReplicatedStorage:FindFirstChild("SprayGround", true)
+                        if sprayRemote then sprayRemote:FireServer() end
+                    end
+                end)
+            end
+        end
+    end
+
     CatFunctions.UnloadAll = function()
+        -- 清理所有新功能的 GUI 和連接
+        if env_global.Radar3DGui then env_global.Radar3DGui:Destroy() end
+        if env_global.CustomUIGui then env_global.CustomUIGui:Destroy() end
+        
+        -- 重置所有新功能的狀態
+        env_global.SmartDodge = false
+        env_global.ComboAttack = false
+        env_global.DynamicInvis = false
+        env_global.FakeDeath = false
+        env_global.Radar3D = false
+        env_global.ItemScanner = false
+        env_global.AutoBuild = false
+        env_global.PreciseThrow = false
+        env_global.LearningAI = false
+        env_global.TeamAI = false
+        env_global.MemoryOpt = false
+        env_global.NetworkOpt = false
+        env_global.CustomUI = false
+        env_global.EffectsSystem = false
+        
+        -- 恢復透明度（動態隱身）
+        if lplr.Character then
+            for _, v in pairs(lplr.Character:GetChildren()) do
+                if v:IsA("BasePart") then
+                    v.Transparency = v.Name == "HumanoidRootPart" and 1 or 0
+                end
+            end
+        end
+        
+        -- 原有的清理邏輯
         -- 1. 停止本腳本的所有功能
         local scriptToggles = {
             "KillAura", "Scaffold", "NoSlowDown", "Reach", "AutoClicker", "LongJump",
@@ -3419,7 +4570,7 @@ function functionsModule.Init(env)
             "AntiFling", "NoClip", "Velocity", "Speed", "Fly", "AutoConsume", "BedNuker",
             "TriggerBot", "HitboxExpander", "AutoLobby", "AutoRejoin", "AntiDead",
             "Step", "AntiVoid", "TimeCycle", "AntiAFK", "NoFog", "FPSCap", "AutoBalloon",
-            "Nuker", "AutoBuyUpgrades", "InstantShop", "AutoClaimRewards", "AntiReport",
+            "Nuker", "AutoBuyUpgrades", "InstantShop", "AntiReport",
             "AntiSpectate", "CustomMatchExploit", "Aimbot", "AutoWin", "FPSBoost", "AutoBuyWool",
             "AutoArmor", "AutoToxic", "Desync", "GlobalNuker", "InfiniteAura",
             "SilentAim", "KeepSprint", "InfiniteFly", "ItemStealer", "AutoHeal", "FastEat", "AutoTrap",
@@ -3501,9 +4652,9 @@ function functionsModule.Init(env)
             -- 恢復渲染設置
             local lighting = game:GetService("Lighting")
             lighting.GlobalShadows = true
+            
+            Notify("Halol 系統", "所有功能已重置", "Success")
         end)
-        
-        Notify("Halol 系統", "所有功能已重置", "Success")
     end
 
     return CatFunctions

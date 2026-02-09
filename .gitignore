@@ -1,7 +1,7 @@
-# Windows
-Thumbs.db
-Desktop.ini
-
-# Temporary files
-*.tmp
+# Roblox Tools .gitignore
+.vscode/
 *.log
+*.tmp
+node_modules/
+bin/
+obj/

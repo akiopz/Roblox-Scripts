@@ -17,8 +17,8 @@ local GuiUtils = {}
 
 function GuiUtils.Init(Gui)
     local Tabs = {}
-    local ScriptStates = {} -- 用於存儲腳本狀態，方便保存
-    local Keybinds = {} -- 用於存儲快捷鍵設置
+    local ScriptStates = {}
+    local Keybinds = {}
     
     -- 加載保存的設置
     if Gui.env and Gui.env.LoadSettings then
@@ -37,26 +37,27 @@ function GuiUtils.Init(Gui)
         Gui.ApplyProperties(TabButton, {
             Name = name .. "Button",
             Parent = Gui.TabContainer,
-            BackgroundColor3 = Color3_fromRGB(15, 15, 25),
+            BackgroundColor3 = Color3_fromRGB(255, 255, 255),
+            BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Size = UDim2_new(0, 140, 0, 36), -- 稍微增加高度
-            Font = Enum_Font.Code, -- 使用程式碼字體
-            Text = "> " .. name, -- 加入科幻前綴
-            TextColor3 = Color3_fromRGB(100, 100, 150),
-            TextSize = 13,
-            ZIndex = 15, -- 確保在容器之上
+            Size = UDim2_new(1, 0, 0, 30),
+            Font = Enum_Font.GothamBold,
+            Text = name,
+            TextColor3 = Color3_fromRGB(160, 160, 170),
+            TextSize = 12,
+            ZIndex = 15,
             Active = true
         })
         
         Gui.ApplyProperties(TabStroke, {
-            Color = Color3_fromRGB(40, 40, 60),
+            Color = Color3_fromRGB(255, 255, 255),
             Thickness = 1,
-            Transparency = 0.5,
+            Transparency = 1,
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
             Parent = TabButton
         })
         
-        TBCorner.CornerRadius = UDim.new(0, 2) -- 更硬朗的圓角
+        TBCorner.CornerRadius = UDim.new(0, 6)
         TBCorner.Parent = TabButton
         
         Gui.ApplyProperties(Page, {
@@ -65,32 +66,32 @@ function GuiUtils.Init(Gui)
             BackgroundTransparency = 1,
             Size = UDim2_new(1, 0, 1, 0),
             Visible = false,
-            ScrollBarThickness = 2,
+            ScrollBarThickness = 0,
             CanvasSize = UDim2_new(0, 0, 0, 0)
         })
         
         PageList.Parent = Page
-        PageList.Padding = UDim.new(0, 8)
+        PageList.Padding = UDim.new(0, 5)
         PageList.SortOrder = Enum.SortOrder.LayoutOrder
+        PageList.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
         local function Switch()
             if Page.Visible then return end
 
             for _, t in pairs(Tabs) do
-                t.Button.BackgroundColor3 = Color3_fromRGB(15, 15, 25)
-                t.Button.TextColor3 = Color3_fromRGB(100, 100, 150)
+                t.Button.BackgroundTransparency = 1
+                t.Button.TextColor3 = Color3_fromRGB(160, 160, 170)
                 local s = t.Button:FindFirstChildOfClass("UIStroke")
-                if s then s.Color = Color3_fromRGB(40, 40, 60) end
+                if s then s.Transparency = 1 end
                 t.Page.Visible = false
             end
             
-            TabButton.BackgroundColor3 = Color3_fromRGB(25, 30, 60)
-            TabButton.TextColor3 = Color3_fromRGB(0, 255, 255)
+            TabButton.BackgroundTransparency = 0.92
+            TabButton.TextColor3 = Color3_fromRGB(255, 255, 255)
             local stroke = TabButton:FindFirstChildOfClass("UIStroke")
-            if stroke then stroke.Color = Color3_fromRGB(0, 150, 255) end
+            if stroke then stroke.Transparency = 0.85 end
             
             Page.Visible = true
-            -- 暫時移除 CanvasGroup 動畫以確保穩定性
         end
         
         Gui.SafeConnect(TabButton.MouseButton1Click, Switch)
@@ -99,19 +100,15 @@ function GuiUtils.Init(Gui)
             Page.CanvasSize = UDim2_new(0, 0, 0, PageList.AbsoluteContentSize.Y + 10)
         end)
         
-        -- 修復字典計數問題，確保第一個分頁能自動顯示
         local isFirst = true
-        for _ in pairs(Tabs) do
-            isFirst = false
-            break
-        end
+        for _ in pairs(Tabs) do isFirst = false break end
         Page.Visible = isFirst
         
         if isFirst then
-            TabButton.BackgroundColor3 = Color3_fromRGB(25, 30, 60)
-            TabButton.TextColor3 = Color3_fromRGB(0, 255, 255)
+            TabButton.BackgroundTransparency = 0.92
+            TabButton.TextColor3 = Color3_fromRGB(255, 255, 255)
             local stroke = TabButton:FindFirstChildOfClass("UIStroke")
-            if stroke then stroke.Color = Color3_fromRGB(0, 150, 255) end
+            if stroke then stroke.Transparency = 0.85 end
         end
 
         Tabs[name] = {Button = TabButton, Page = Page, List = PageList, Switch = Switch}
@@ -126,94 +123,110 @@ function GuiUtils.Init(Gui)
         local Button = Instance.new("TextButton")
         local BCorner = Instance.new("UICorner")
         local BStroke = Instance.new("UIStroke")
+        local TitleLabel = Instance.new("TextLabel")
         local DescLabel = Instance.new("TextLabel")
         local StatusLight = Instance.new("Frame")
         
         Gui.ApplyProperties(Button, {
             Name = name,
             Parent = container,
-            BackgroundColor3 = Color3_fromRGB(20, 20, 35),
-            Size = UDim2_new(0.96, 0, 0, 60),
-            Font = Enum_Font.GothamBold,
-            Text = "  " .. name,
-            TextColor3 = Color3_fromRGB(255, 255, 255),
-            TextSize = 14,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextYAlignment = Enum.TextYAlignment.Top,
+            BackgroundColor3 = Color3_fromRGB(20, 20, 25),
+            Size = UDim2_new(0.96, 0, 0, 45),
             AutoButtonColor = false,
             BorderSizePixel = 0,
             Active = true,
             Selectable = true,
-            ZIndex = 20 -- 確保在內容容器之上
+            ZIndex = 20,
+            Text = ""
         })
 
-        Gui.ApplyProperties(BCorner, { CornerRadius = UDim.new(0, 6), Parent = Button })
-        Gui.ApplyProperties(BStroke, { Color = Color3_fromRGB(50, 50, 80), Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = Button })
+        BCorner.CornerRadius = UDim.new(0, 6)
+        BCorner.Parent = Button
         
-        Gui.ApplyProperties(StatusLight, {
-            Size = UDim2_new(0, 4, 0, 20),
-            Position = UDim2_new(0, 5, 0, 8),
-            BackgroundColor3 = Color3_fromRGB(60, 60, 80),
-            BorderSizePixel = 0,
+        Gui.ApplyProperties(BStroke, {
+            Color = Color3_fromRGB(40, 40, 50),
+            Thickness = 1,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+            Parent = Button
+        })
+        
+        Gui.ApplyProperties(TitleLabel, {
+            Name = "Title",
             Parent = Button,
+            BackgroundTransparency = 1,
+            Position = UDim2_new(0, 12, 0, 6),
+            Size = UDim2_new(1, -80, 0, 16),
+            Font = Enum_Font.GothamBold,
+            Text = name,
+            TextColor3 = Color3_fromRGB(220, 220, 230),
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 21
         })
-        Gui.ApplyProperties(Instance.new("UICorner"), { CornerRadius = UDim.new(1, 0), Parent = StatusLight })
 
         Gui.ApplyProperties(DescLabel, {
-            Size = UDim2_new(1, -20, 0, 20),
-            Position = UDim2_new(0, 15, 0, 32),
+            Name = "Desc",
+            Parent = Button,
             BackgroundTransparency = 1,
+            Position = UDim2_new(0, 12, 0, 23),
+            Size = UDim2_new(1, -20, 0, 12),
             Font = Enum_Font.Gotham,
             Text = desc,
-            TextColor3 = Color3_fromRGB(100, 100, 130),
-            TextSize = 12,
+            TextColor3 = Color3_fromRGB(120, 120, 130),
+            TextSize = 10,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = Button,
-            ZIndex = 21,
-            Active = false -- 不攔截父按鈕點擊
+            ZIndex = 21
         })
+
+        Gui.ApplyProperties(StatusLight, {
+            Name = "Status",
+            Parent = Button,
+            BackgroundColor3 = Color3_fromRGB(45, 45, 55),
+            Position = UDim2_new(1, -12, 0.5, -3),
+            Size = UDim2_new(0, 6, 0, 6),
+            ZIndex = 21
+        })
+        local StatusCorner = Instance.new("UICorner")
+        StatusCorner.CornerRadius = UDim.new(1, 0)
+        StatusCorner.Parent = StatusLight
 
         local KeyLabel = Instance.new("TextLabel")
         Gui.ApplyProperties(KeyLabel, {
-            Size = UDim2_new(0, 60, 0, 20),
+            Size = UDim2_new(0, 45, 0, 14),
             Position = UDim2_new(1, -65, 0, 8),
-            BackgroundTransparency = 0.8,
+            BackgroundTransparency = 0.7,
             BackgroundColor3 = Color3_fromRGB(0, 0, 0),
-            Font = Enum_Font.Code,
-            Text = Keybinds[name] or "[NONE]",
-            TextColor3 = Color3_fromRGB(0, 200, 200),
-            TextSize = 10,
+            Font = Enum_Font.Gotham,
+            Text = Keybinds[name] or "NONE",
+            TextColor3 = Color3_fromRGB(130, 130, 140),
+            TextSize = 8,
             Parent = Button,
             ZIndex = 22
         })
-        Gui.ApplyProperties(Instance.new("UICorner"), { CornerRadius = UDim.new(0, 4), Parent = KeyLabel })
+        local KeyCorner = Instance.new("UICorner")
+        KeyCorner.CornerRadius = UDim.new(0, 3)
+        KeyCorner.Parent = KeyLabel
 
         local isBinding = false
         Gui.SafeConnect(Button.MouseButton2Click, function()
             if isBinding then return end
             isBinding = true
-            KeyLabel.Text = "[...]"
-            KeyLabel.TextColor3 = Color3_fromRGB(255, 255, 0)
+            KeyLabel.Text = "..."
+            KeyLabel.TextColor3 = Color3_fromRGB(255, 255, 100)
             
             local connection
             connection = game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
                 if gpe then return end
                 if input.UserInputType == Enum.UserInputType.Keyboard then
                     local key = input.KeyCode.Name
-                    if key == "Escape" or key == "Backspace" then
-                        key = nil
-                    end
+                    if key == "Escape" or key == "Backspace" then key = nil end
                     
                     Keybinds[name] = key
-                    KeyLabel.Text = key or "[NONE]"
-                    KeyLabel.TextColor3 = Color3_fromRGB(0, 200, 200)
+                    KeyLabel.Text = key or "NONE"
+                    KeyLabel.TextColor3 = Color3_fromRGB(130, 130, 140)
                     
                     if Gui.env and Gui.env.SaveSettings then
-                        Gui.env.SaveSettings("CatV4_Settings", {
-                            States = ScriptStates,
-                            Keybinds = Keybinds
-                        })
+                        Gui.env.SaveSettings("CatV4_Settings", { States = ScriptStates, Keybinds = Keybinds })
                     end
                     
                     connection:Disconnect()
@@ -223,11 +236,10 @@ function GuiUtils.Init(Gui)
             end)
         end)
 
-        -- 快捷鍵執行邏輯
         Gui.SafeConnect(game:GetService("UserInputService").InputBegan, function(input, gpe)
             if gpe then return end
             if Keybinds[name] and input.KeyCode.Name == Keybinds[name] then
-                Button:Click() -- 模擬點擊
+                Button:Click()
             end
         end)
 
@@ -235,37 +247,30 @@ function GuiUtils.Init(Gui)
         local isProcessing = false
 
         local function UpdateVisuals()
-            local targetColor = active and Color3_fromRGB(30, 40, 80) or Color3_fromRGB(20, 20, 35)
-            local targetStroke = active and Color3_fromRGB(0, 150, 255) or Color3_fromRGB(50, 50, 80)
+            local targetColor = active and Color3_fromRGB(28, 28, 38) or Color3_fromRGB(20, 20, 25)
+            local targetStroke = active and Color3_fromRGB(0, 150, 255) or Color3_fromRGB(40, 40, 50)
             
             Button.BackgroundColor3 = targetColor
             BStroke.Color = targetStroke
+            BStroke.Transparency = active and 0.4 or 0
             
             if active then
-                StatusLight.BackgroundColor3 = Color3_fromRGB(0, 255, 255)
-                DescLabel.TextColor3 = Color3_fromRGB(150, 150, 200)
+                StatusLight.BackgroundColor3 = Color3_fromRGB(0, 255, 180)
+                TitleLabel.TextColor3 = Color3_fromRGB(255, 255, 255)
             else
-                StatusLight.BackgroundColor3 = Color3_fromRGB(60, 60, 80)
-                DescLabel.TextColor3 = Color3_fromRGB(100, 100, 130)
+                StatusLight.BackgroundColor3 = Color3_fromRGB(45, 45, 55)
+                TitleLabel.TextColor3 = Color3_fromRGB(200, 200, 210)
             end
             
             ScriptStates[name] = active
-            
-            -- 自動保存設置
             if Gui.env and Gui.env.SaveSettings then
-                Gui.env.SaveSettings("CatV4_Settings", {
-                    States = ScriptStates,
-                    Keybinds = Keybinds
-                })
+                Gui.env.SaveSettings("CatV4_Settings", { States = ScriptStates, Keybinds = Keybinds })
             end
         end
 
         if active then
             UpdateVisuals()
-            -- 如果初始狀態為開啟，執行加載函數
-            task.spawn(function()
-                pcall(loadFunc, true)
-            end)
+            task.spawn(function() pcall(loadFunc, true) end)
         end
 
         Gui.SafeConnect(Button.MouseButton1Click, function()
@@ -276,18 +281,16 @@ function GuiUtils.Init(Gui)
             local success, err = pcall(loadFunc, active)
             
             if success then
-                -- 按鈕反饋動畫
-                task.spawn(UpdateVisuals)
+                UpdateVisuals()
             else
                 active = not active
                 if Notify then Notify("系統錯誤", tostring(err), "Error") end
             end
             
-            task.wait(0.1) -- 防止過快點擊
+            task.wait(0.1)
             isProcessing = false
         end)
         
-        -- 更新滾動範圍
         targetTab.Page.CanvasSize = UDim2_new(0, 0, 0, targetTab.List.AbsoluteContentSize.Y + 20)
     end
 
@@ -295,9 +298,7 @@ function GuiUtils.Init(Gui)
         CreateTab = GuiUtils.CreateTab,
         AddScript = GuiUtils.AddScript,
         GetStates = function() return ScriptStates end,
-        SetStates = function(states) 
-            ScriptStates = states or {}
-        end
+        SetStates = function(states) ScriptStates = states or {} end
     }
 end
 

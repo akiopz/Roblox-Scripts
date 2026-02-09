@@ -1,9 +1,10 @@
 ---@diagnostic disable: undefined-global, undefined-field, deprecated, inject-field
 ---@return env_global
 local function get_env_safe()
-    ---@type env_global
     local env = (getgenv or function() return _G end)()
-    return env
+    ---@type any
+    local env_any = env
+    return env_any
 end
 
 local env_global = get_env_safe()
@@ -35,71 +36,117 @@ local BlatantModule = {}
 
 function BlatantModule.Init(Gui, Notify, CatFunctions)
     return {
+        ToggleAutoBuy = function(state)
+            CatFunctions.ToggleAutoBuy(state)
+        end,
+
+        ToggleKillAura = function(state)
+            CatFunctions.ToggleKillAura(state)
+        end,
+
+        ToggleBedNuker = function(state)
+            CatFunctions.ToggleBedNuker(state)
+        end,
+
+        ToggleAutoWin = function(state)
+            CatFunctions.ToggleAutoWin(state)
+        end,
+
+        ToggleLongJump = function(state)
+            CatFunctions.ToggleLongJump(state)
+        end,
+
+        ToggleAntiVoid = function(state)
+            CatFunctions.ToggleAntiVoid(state)
+        end,
+
+        ToggleScaffold = function(state)
+            CatFunctions.ToggleScaffold(state)
+        end,
+
+        ToggleAutoBridge = function(state)
+            CatFunctions.ToggleAutoBridge(state)
+        end,
+
+        ToggleSpeed = function(state)
+            CatFunctions.ToggleSpeed(state)
+        end,
+
+        ToggleFly = function(state)
+            CatFunctions.ToggleFly(state)
+        end,
+
         ToggleGlobalResourceCollect = function(state)
-                    env_global.GlobalResourceCollect = state
-                    if not env_global.GlobalResourceCollect then return end
-                    task.spawn(function()
-                        while env_global.GlobalResourceCollect and task.wait(0.5) do
-                            local char = lp.Character
-                            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                            if hrp and CatFunctions and CatFunctions.GetBattlefieldState then
-                                local battlefield = CatFunctions.GetBattlefieldState()
-                                if #battlefield.resources > 0 then
-                                    for _, res in ipairs(battlefield.resources) do
-                                        if not env_global.GlobalResourceCollect then break end
-                                        if res.part and res.part.Parent then
-                                            -- 檢查是否為掉落物 (ItemDrops 或 Pickups 內)
-                                            local isPickup = res.part:IsDescendantOf(workspace:FindFirstChild("ItemDrops")) or 
-                                                           res.part:IsDescendantOf(workspace:FindFirstChild("Pickups"))
-                                            
-                                            if isPickup then
-                                                hrp.CFrame = res.part.CFrame + Vector3_new(0, 1, 0)
-                                                task_wait(0.2)
-                                            end
-                                        end
+            env_global.GlobalResourceCollect = state
+            if not env_global.GlobalResourceCollect then return end
+            task.spawn(function()
+                while env_global.GlobalResourceCollect and task.wait(0.5) do
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and CatFunctions and CatFunctions.GetBattlefieldState then
+                        local battlefield = CatFunctions.GetBattlefieldState()
+                        if #battlefield.resources > 0 then
+                            for _, res in ipairs(battlefield.resources) do
+                                if not env_global.GlobalResourceCollect then break end
+                                if res.part and res.part.Parent then
+                                    -- 檢查是否為掉落物 (ItemDrops 或 Pickups 內)
+                                    local isPickup = res.part:IsDescendantOf(workspace:FindFirstChild("ItemDrops")) or 
+                                                   res.part:IsDescendantOf(workspace:FindFirstChild("Pickups"))
+                                    
+                                    if isPickup then
+                                        hrp.CFrame = res.part.CFrame + Vector3_new(0, 1, 0)
+                                        task_wait(0.2)
                                     end
                                 end
                             end
                         end
-                    end)
-                end,
+                    end
+                end
+            end)
+        end,
 
         ToggleVoidAll = function(state)
             env_global.VoidAll = state
             if not env_global.VoidAll then return end
             
-            local char = lp.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            
             local function Fling(target)
                 if not env_global.VoidAll then return end
-                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                local char = lp.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if hrp and target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and target.Team ~= lp.Team then
                     local thrp = target.Character.HumanoidRootPart
+                    local oldCFrame = hrp.CFrame
+                    
                     local bfv = Instance.new("BodyAngularVelocity")
-                    Gui.ApplyProperties(bfv, {
-                        AngularVelocity = Vector3_new(0, 99999, 0),
-                        MaxTorque = Vector3_new(0, math.huge, 0),
-                        P = math.huge,
-                        Parent = hrp
-                    })
-                    hrp.CFrame = thrp.CFrame
-                    task_wait(0.1)
+                    bfv.AngularVelocity = Vector3_new(0, 99999, 0)
+                    bfv.MaxTorque = Vector3_new(0, math.huge, 0)
+                    bfv.P = math.huge
+                    bfv.Parent = hrp
+                    
+                    -- 高頻抖動以增加甩人力度
+                    for i = 1, 10 do
+                        if not env_global.VoidAll then break end
+                        hrp.CFrame = thrp.CFrame * CFrame.new(math.random(-1, 1), 0, math.random(-1, 1))
+                        task.wait()
+                    end
+                    
                     bfv:Destroy()
+                    hrp.CFrame = oldCFrame
                 end
             end
 
             task_spawn(function()
                 while env_global.VoidAll do
-                    for _, player in ipairs(Players:GetPlayers()) do
+                    local players = Players:GetPlayers()
+                    for i = 1, #players do
+                        local player = players[i]
                         if not env_global.VoidAll then break end
-                        if player ~= lp then
+                        if player ~= lp and player.Team ~= lp.Team then
                             Fling(player)
-                            task_wait(0.2)
                         end
+                        if i % 5 == 0 then task_wait() end -- 防止連續傳送導致卡頓
                     end
-                    task_wait(1)
+                    task_wait(0.5)
                 end
             end)
         end,
@@ -108,7 +155,8 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
             env_global.FastBreak = state
             if not env_global.FastBreak then return end
             task_spawn(function()
-                while env_global.FastBreak and task_wait(0.01) do
+                while env_global.FastBreak do
+                    RunService.Heartbeat:Wait()
                     local char = lp.Character
                     local tool = char and char:FindFirstChildOfClass("Tool")
                     if tool and tool:FindFirstChild("Handle") then
@@ -129,15 +177,18 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
             env_global.ChestStealer = state
             if not env_global.ChestStealer then return end
             task_spawn(function()
-                while env_global.ChestStealer and task_wait(0.3) do
+                while env_global.ChestStealer and task_wait(0.5) do
                     local char = lp.Character
                     local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp then
                         local nearestChest = nil
                         local minDist = 20
                         
-                        -- 優化：只搜索附近的箱子
-                        for _, v in ipairs(workspace:GetDescendants()) do
+                        -- 優化：利用 Region3 僅搜尋附近的物件，大幅提升效能
+                        local region = Region3.new(hrp.Position - Vector3_new(20, 20, 20), hrp.Position + Vector3_new(20, 20, 20))
+                        local parts = workspace:FindPartsInRegion3(region, char, 100)
+                        
+                        for _, v in ipairs(parts) do
                             if v:IsA("BasePart") and v.Name:lower():find("chest") then
                                 local d = (hrp.Position - v.Position).Magnitude
                                 if d < minDist then
@@ -152,9 +203,8 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
                                            ReplicatedStorage:FindFirstChild("TakeItemFromChest", true)
                             
                             if remote then
-                                -- 使用遠程交互，不需要物理傳送 (防止被反作弊檢測)
                                 remote:FireServer({["chest"] = nearestChest})
-                                task_wait(0.1)
+                                task_wait(0.2)
                             end
                         end
                     end
@@ -165,107 +215,38 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
         ToggleProjectileAura = function(state)
             env_global.ProjectileAura = state
             if not env_global.ProjectileAura then return end
+            Notify("戰鬥加強", "投擲物光環 (Projectile Aura) 已極限加強：\n1. 高精度彈道預測\n2. 自動換彈與發射模擬\n3. 多目標鎖定與追蹤", "Success")
+            
             task_spawn(function()
-                while env_global.ProjectileAura and task_wait(0.1) do
+                while env_global.ProjectileAura and task_wait(0.05) do
                     local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
                     local tool = char and char:FindFirstChildOfClass("Tool")
-                    if tool and (tool.Name:lower():find("bow") or tool.Name:lower():find("fireball") or tool.Name:lower():find("snowball")) then
-                        local nearest = nil
-                        local minDist = 100
-                        for _, p in ipairs(Players:GetPlayers()) do
-                            if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                                local dist = (char.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-                                if dist < minDist then
-                                    minDist = dist
-                                    nearest = p.Character.HumanoidRootPart
-                                end
+                    
+                    if hrp and tool and (tool.Name:lower():find("bow") or tool.Name:lower():find("fireball") or tool.Name:lower():find("snowball") or tool.Name:lower():find("arrow")) then
+                        -- 使用 CatFunctions 的核心目標獲取系統
+                        local targetChar = CatFunctions and CatFunctions.getBestTarget and CatFunctions.getBestTarget(env_global.ProjectileRange or 150)
+                        local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                        
+                        if targetHrp then
+                            local dist = (hrp.Position - targetHrp.Position).Magnitude
+                            -- 2. 彈道預測 (考量重力與目標速度)
+                            local velocity = targetHrp.Velocity
+                            local timeToHit = dist / 120
+                            local predictedPos = targetHrp.Position + (velocity * timeToHit) + Vector3_new(0, (0.5 * 196.2 * timeToHit^2), 0)
+                            
+                            -- 3. 自動轉向與發射模擬
+                            pcall(function()
+                                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, predictedPos)
+                            end)
+                            
+                            if tool.Name:lower():find("fireball") or tool.Name:lower():find("snowball") then
+                                tool:Activate()
                             end
-                        end
-                        if nearest then
-                            local pos = nearest.Position + (nearest.Velocity * (minDist / 100))
-                            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, pos)
                         end
                     end
                 end
             end)
-        end,
-
-        ToggleAutoBuy = function(state)
-            env_global.AutoBuy = state
-            if not env_global.AutoBuy then return end
-            task_spawn(function()
-                local itemsToBuy = {"item_wool", "sword_iron", "armor_iron", "armor_diamond"}
-                while env_global.AutoBuy and task_wait(2) do
-                    local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true) or 
-                                   ReplicatedStorage:FindFirstChild("BuyItem", true)
-                    if remote then
-                        for _, item in ipairs(itemsToBuy) do
-                            if not env_global.AutoBuy then break end
-                            remote:FireServer({["item"] = item})
-                        end
-                    end
-                end
-            end)
-        end,
-
-        ToggleSpeed = function(state)
-            env_global.Speed = state
-            if state then
-                Notify("移動加強", "極速移動已開啟 (Boost 模式)", "Success")
-                task_spawn(function()
-                    local lastPos = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") and lp.Character.HumanoidRootPart.Position
-                    while env_global.Speed do
-                        local char = lp.Character
-                        local hum = char and char:FindFirstChildOfClass("Humanoid")
-                        local root = char and char:FindFirstChild("HumanoidRootPart")
-                        if hum and root then
-                            local speed = env_global.SpeedValue or 23
-                            local moveDir = hum.MoveDirection
-                            
-                            -- Boost 模式：結合 Velocity 與 CFrame 微調
-                            if moveDir.Magnitude > 0 then
-                                root.Velocity = Vector3_new(moveDir.X * speed, root.Velocity.Y, moveDir.Z * speed)
-                                
-                                -- 繞過部分反作弊的位移補償
-                                if (speed > 20) then
-                                    root.CFrame = root.CFrame + (moveDir * 0.1)
-                                end
-                            end
-                        end
-                        RunService.Heartbeat:Wait()
-                    end
-                end)
-            end
-        end,
-
-        ToggleFly = function(state)
-            env_global.Fly = state
-            if state then
-                Notify("移動加強", "飛行模式已開啟 (Heatbeat 繞過模式)", "Success")
-                task_spawn(function()
-                    local speed = env_global.FlySpeed or 50
-                    local verticalVelocity = 0
-                    while env_global.Fly do
-                        local char = lp.Character
-                        local root = char and char:FindFirstChild("HumanoidRootPart")
-                        if root then
-                            local moveDir = Vector3_new(0,0,0)
-                            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + workspace.CurrentCamera.CFrame.LookVector end
-                            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - workspace.CurrentCamera.CFrame.LookVector end
-                            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - workspace.CurrentCamera.CFrame.LookVector:Cross(Vector3_new(0,1,0)) end
-                            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + workspace.CurrentCamera.CFrame.LookVector:Cross(Vector3_new(0,1,0)) end
-                            
-                            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then verticalVelocity = 1 elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then verticalVelocity = -1 else verticalVelocity = 0 end
-                            
-                            -- Heatbeat 繞過：模擬微小的上下抖動防止被檢測為掛載飛行
-                            local jitter = math.sin(tick() * 20) * 0.05
-                            root.Velocity = Vector3_new(0, 0, 0)
-                            root.CFrame = root.CFrame + (moveDir * (speed / 10)) + Vector3_new(0, (verticalVelocity * (speed / 15)) + jitter, 0)
-                        end
-                        RunService.Heartbeat:Wait()
-                    end
-                end)
-            end
         end,
 
         ToggleSpider = function(state)
@@ -334,33 +315,7 @@ function BlatantModule.Init(Gui, Notify, CatFunctions)
         end,
 
         ToggleAutoBuyPro = function(state)
-            env_global.AutoBuyPro = state
-            if not env_global.AutoBuyPro then return end
-            task_spawn(function()
-                local priority = {
-                    {id = "emerald_sword", cost = 20, currency = "emerald"},
-                    {id = "diamond_sword", cost = 4, currency = "emerald"},
-                    {id = "iron_sword", cost = 70, currency = "iron"},
-                    {id = "emerald_armor", cost = 40, currency = "emerald"},
-                    {id = "diamond_armor", cost = 8, currency = "emerald"},
-                    {id = "iron_armor", cost = 120, currency = "iron"},
-                    {id = "telepearl", cost = 1, currency = "emerald"},
-                    {id = "balloon", cost = 2, currency = "emerald"},
-                    {id = "fireball", cost = 40, currency = "iron"},
-                    {id = "wool_white", cost = 16, currency = "iron"}
-                }
-                
-                while env_global.AutoBuyPro and task_wait(3) do
-                    local remote = ReplicatedStorage:FindFirstChild("ShopBuyItem", true) or 
-                                   ReplicatedStorage:FindFirstChild("BuyItem", true)
-                    if remote then
-                        for _, item in ipairs(priority) do
-                            if not env_global.AutoBuyPro then break end
-                            remote:FireServer({["item"] = item.id})
-                        end
-                    end
-                end
-            end)
+            CatFunctions.ToggleAutoBuy(state)
         end,
 
         ToggleAutoToxic = function(state)

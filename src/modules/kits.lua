@@ -1,9 +1,10 @@
 ---@diagnostic disable: undefined-global, undefined-field, deprecated, inject-field
 ---@return env_global
 local function get_env_safe()
-    ---@type env_global
     local env = (getgenv or function() return _G end)()
-    return env
+    ---@type any
+    local env_any = env
+    return env_any
 end
 
 local env_global = get_env_safe()
@@ -48,10 +49,14 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                             local minDist = 25
                             for _, p in ipairs(Players:GetPlayers()) do
                                 if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                                    local d = (root.Position - p.Character.HumanoidRootPart.Position).Magnitude
-                                    if d < minDist then
-                                        minDist = d
-                                        nearest = p.Character.HumanoidRootPart
+                                    local targetHrp = p.Character.HumanoidRootPart
+                                    local targetHum = p.Character:FindFirstChildOfClass("Humanoid")
+                                    if targetHum and targetHum.Health > 0 then
+                                        local d = (root.Position - targetHrp.Position).Magnitude
+                                        if d < minDist then
+                                            minDist = d
+                                            nearest = targetHrp
+                                        end
                                     end
                                 end
                             end
@@ -67,9 +72,9 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                         local hannahRemote = getRemote("HannahExecute")
                         if hannahRemote then
                             for _, p in ipairs(Players:GetPlayers()) do
-                                if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("Humanoid") then
+                                if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character:FindFirstChild("HumanoidRootPart") then
                                     local hum = p.Character.Humanoid
-                                    if hum.Health > 0 and hum.Health < 30 then -- 稍微提高閾值
+                                    if hum.Health > 0 and hum.Health < 35 then -- 優化執行閾值
                                         if (root.Position - p.Character.HumanoidRootPart.Position).Magnitude < 18 then
                                             hannahRemote:FireServer({["target"] = p.Character})
                                         end
@@ -78,7 +83,7 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                             end
                         end
                         
-                        -- 3. 收集類技能 (Zephyr, Eldertree, Evelynn, Aery, Grim, Lucia)
+                        -- 3. 收集類技能 (優化為掃描特定資料夾，減少 workspace 全局掃描壓力)
                         local collectTypes = {
                             {name = "ZephyrOrb", remote = "ZephyrOrbCollect", arg = "orb"},
                             {name = "EldertreeOrb", remote = "EldertreeOrbCollect", arg = "orb"},
@@ -88,13 +93,19 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                             {name = "Candy", remote = "LuciaCandyCollect", arg = "candy"}
                         }
 
-                        for _, v in ipairs(workspace:GetChildren()) do
-                            if v:IsA("BasePart") then
-                                for _, info in ipairs(collectTypes) do
-                                    if v.Name == info.name and (v.Position - root.Position).Magnitude < 25 then
-                                        local remote = getRemote(info.remote)
-                                        if remote then
-                                            remote:FireServer({[info.arg] = v})
+                        -- 優先掃描可能的掉落物容器，若無則回退到 workspace
+                        local containers = {workspace:FindFirstChild("ItemDrops"), workspace:FindFirstChild("Pickups"), workspace}
+                        for _, container in ipairs(containers) do
+                            if container then
+                                for _, v in ipairs(container:GetChildren()) do
+                                    if v:IsA("BasePart") then
+                                        for _, info in ipairs(collectTypes) do
+                                            if v.Name == info.name and (v.Position - root.Position).Magnitude < 25 then
+                                                local remote = getRemote(info.remote)
+                                                if remote then
+                                                    remote:FireServer({[info.arg] = v})
+                                                end
+                                            end
                                         end
                                     end
                                 end
@@ -114,8 +125,8 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                             local remote = getRemote(skill.remote)
                             if remote then
                                 for _, p in ipairs(Players:GetPlayers()) do
-                                    if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                                        if (root.Position - p.Character.HumanoidRootPart.Position).Magnitude < skill.dist then
+                                    if p ~= lp and p.Team ~= lp.Team and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") then
+                                        if p.Character.Humanoid.Health > 0 and (root.Position - p.Character.HumanoidRootPart.Position).Magnitude < skill.dist then
                                             remote:FireServer({["target"] = p.Character})
                                         end
                                     end
@@ -124,17 +135,20 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
                         end
 
                         -- 5. 自保/自動類 (Umbra, Warden, Amy, Noelle)
-                        local health = char.Humanoid.Health
-                        if health < 40 then
-                            local rescueRemotes = {"UmbraTeleport", "WardenUseShield", "NoelleUseGift"}
-                            for _, rName in ipairs(rescueRemotes) do
-                                local remote = getRemote(rName)
-                                if remote then remote:FireServer() end
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            local health = hum.Health
+                            if health < 45 then -- 稍微提高自保靈敏度
+                                local rescueRemotes = {"UmbraTeleport", "WardenUseShield", "NoelleUseGift"}
+                                for _, rName in ipairs(rescueRemotes) do
+                                    local remote = getRemote(rName)
+                                    if remote then remote:FireServer() end
+                                end
                             end
-                        end
-                        if health < 70 then
-                            local amy = getRemote("AxolotlAmyUseAxolotl")
-                            if amy then amy:FireServer() end
+                            if health < 75 then
+                                local amy = getRemote("AxolotlAmyUseAxolotl")
+                                if amy then amy:FireServer() end
+                            end
                         end
 
                     end)
@@ -147,11 +161,15 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
             if not env_global.YuziDashExploit then return end
             Notify("Yuzi 增強", "已啟動無限衝刺漏洞 (需 Dao 在手)", "Warning")
             task.spawn(function()
-                while env_global.YuziDashExploit and task.wait(0.01) do
-                    local dao = lp.Character and lp.Character:FindFirstChild("dao")
-                    if dao then
+                while env_global.YuziDashExploit and task.wait(0.05) do -- 優化衝刺頻率，減少伺服器負擔
+                    local char = lp.Character
+                    local dao = char and char:FindFirstChild("dao")
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if dao and hrp then
                         local remote = dao:FindFirstChild("Dash", true)
-                        if remote then remote:FireServer({["direction"] = lp.Character.HumanoidRootPart.CFrame.LookVector}) end
+                        if remote then 
+                            remote:FireServer({["direction"] = hrp.CFrame.LookVector}) 
+                        end
                     end
                 end
             end)
@@ -162,11 +180,19 @@ function KitsModule.Init(Gui, Notify, CatFunctions)
             if not env_global.MinerAutoMine then return end
             task.spawn(function()
                 while env_global.MinerAutoMine and task.wait(0.5) do
-                    local remote = ReplicatedStorage:FindFirstChild("MinerMine", true)
-                    if remote then
-                        for _, v in ipairs(workspace:GetChildren()) do
-                            if v:IsA("BasePart") and v.Name == "MinerRock" and (v.Position - lp.Character.HumanoidRootPart.Position).Magnitude < 20 then
-                                remote:FireServer({["rock"] = v})
+                    local char = lp.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    
+                    if hrp then
+                        local remote = ReplicatedStorage:FindFirstChild("MinerMine", true)
+                        if remote then
+                            -- 優化：僅掃描 HumanoidRootPart 附近的物件
+                            for _, v in ipairs(workspace:GetChildren()) do
+                                if v:IsA("BasePart") and v.Name == "MinerRock" then
+                                    if (v.Position - hrp.Position).Magnitude < 25 then
+                                        remote:FireServer({["rock"] = v})
+                                    end
+                                end
                             end
                         end
                     end

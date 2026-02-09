@@ -1,9 +1,10 @@
 ---@diagnostic disable: undefined-global, undefined-field, deprecated, inject-field
 ---@return env_global
 local function get_env_safe()
-    ---@type env_global
     local env = (getgenv or function() return _G end)()
-    return env
+    ---@type any
+    local env_any = env
+    return env_any
 end
 
 local env_global = get_env_safe()
@@ -377,9 +378,11 @@ function VisualsModule.Init(Gui, Notify)
                         elseif playerDots[player] then
                             playerDots[player].Visible = false
                         end
+                        -- 優化：防止大量玩家時卡頓
+                        if _ % 20 == 0 then task_wait() end
                     end
                 end
-                task_wait(0.05)
+                task_wait(0.1) -- 降頻至 10 FPS 已足夠雷達顯示
             end
             if screenGui then screenGui:Destroy() end
             env_global.RadarGui = nil
@@ -847,6 +850,13 @@ function VisualsModule.Init(Gui, Notify)
             end)
         end,
         ToggleFullESP = function(state)
+            env_global.FullESPEnabled = state
+            if env_global.FullESPEnabled then
+                for _, p in ipairs(Players:GetPlayers()) do CreateFullESP(p) end
+                Gui.SafeConnect(Players.PlayerAdded, CreateFullESP)
+            end
+        end,
+        ToggleESP = function(state)
             env_global.FullESPEnabled = state
             if env_global.FullESPEnabled then
                 for _, p in ipairs(Players:GetPlayers()) do CreateFullESP(p) end
